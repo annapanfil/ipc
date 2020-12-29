@@ -68,7 +68,7 @@ struct msgserv{
     char name[30];
   };
   ```
-  Serwer umieszcza w **swojej** kolejce komunikatów wiadomość o typie = numerowi klienta. W wiadomości znajduje się nowy identyfikator klienta – jego numer w tablicy klientów. Gdy nazwa klienta istnieje już w bazie – zwraca -1.
+  Serwer umieszcza w **swojej** kolejce komunikatów wiadomość o typie = numerowi klienta. W wiadomości znajduje się nowy identyfikator klienta – jego numer w tablicy klientów. Gdy nazwa klienta istnieje już w bazie – zwraca -1, gdy limit klientów został przekroczony – -2.
 
   //Co jeżeli kolejka już istnieje?
 
@@ -97,7 +97,7 @@ struct msgserv{
   };
   ```
 
-  Gdy nazwa tematu istnieje już w bazie, serwer umieszcza w  kolejce klienta wartość 1. W przeciwnym przypadku – 0.
+  Gdy nazwa tematu istnieje już w bazie, serwer umieszcza w  kolejce klienta wartość 1, gdy ilość tematów jest za duża – 2. W przeciwnym przypadku – 0.
 
 #### Zapis na subskrybcję
   `topic_tag` – temat<br>
