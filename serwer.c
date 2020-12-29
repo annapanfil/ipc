@@ -5,11 +5,9 @@
 //typ5 - wyłączenie systemu
 
 /*TODO:
-- logowanie: nie zwiększać, jeśli nie dodał
 - nowy temat: sprawdzić poprawność
 - zapis na subskrybcję: dodać, sprawdzić poprawność
 - nowa wiadomość: dodać, rozesłać
-- połączyć struktury
 */
 
 #include <sys/types.h>
@@ -25,27 +23,22 @@
 #define CLIENTS_NR 15
 #define SERVER_QUE_NR 12345
 
-union topic_tag{
-    char name[NAME_LENGTH];
-    int  id;
-};
+
 
 struct client{
   int id;
   char name[NAME_LENGTH];
 };
 
-struct sub{
-  int client_id;
-  int length; //-1 → forever
-  struct sub* next_sub;
-};
-
 struct topic{
   //czy jest przypisany do konkretnego klienta czy wszyscy mogą w nim pisać?
   int id;
   char name[NAME_LENGTH];
-  struct sub first_sub;
+  struct sub{
+    int client_id;
+    int length; //-1 → forever
+    struct sub* next_sub;
+  } first_sub;
 };
 
 struct msgbuf{
@@ -53,7 +46,10 @@ struct msgbuf{
   int id;
   int number;
   char text[MESSAGE_LENGTH];
-  union topic_tag topic_tag;
+  union topic_tag{
+      char name[NAME_LENGTH];
+      int  id;
+  } topic_tag;
 };
 
 struct feedback{

@@ -3,33 +3,31 @@
 #include <sys/msg.h>
 #include <string.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <unistd.h>
 
 /*TODO:
-- logowanie: komunikacja z uzytkownikiem, zwrócenie 2 wartości
-- nowy temat: komunikacja z uzytkownikiem
-- zapis na subskrybcję: komunikacja z uzytkownikiem
+- nowy temat: komunikacja z uzytkownikiem, obsługa błędów
+- zapis na subskrybcję: komunikacja z uzytkownikiem, odbiór komunikatu
 - nowa wiadomość: komunikacja z uzytkownikiem
 - otrzymywanie wiadomości
 - menu główne
-- reakcja na błędy
-- podział na mniejsze funkcje?
+- podział na mniejsze funkcje
 */
 #define NAME_LENGTH 30
 #define MESSAGE_LENGTH 1024
 #define SERVER_QUE_NR 12345
 
-union topic_tag{
-    char name[NAME_LENGTH];
-    int  id;
-};
 
 struct msgbuf{
   long type;
   int id;
   int number;
   char text[MESSAGE_LENGTH];
-  union topic_tag topic_tag;
+  union topic_tag{
+      char name[NAME_LENGTH];
+      int  id;
+  } topic_tag;
 };
 
 struct feedback{
@@ -48,6 +46,7 @@ int login(int server, int* que, char name[NAME_LENGTH]){
   struct msgbuf login_msg;
   int que_key = getpid();
   *que = msgget(que_key, 0644|IPC_CREAT);
+  printf("in login %d\n", *que);
   login_msg.type = 1;
   login_msg.id = que_key;
   strcpy(login_msg.text, name);
@@ -55,21 +54,26 @@ int login(int server, int* que, char name[NAME_LENGTH]){
   return que_key;
 }
 
-void login_menu(){
-  //login
-  char name[NAME_LENGTH];
-  printf("Dzień dobry! Podaj swoją nazwę użytkownika: "); //nie może zawierać spacji
-  name = "Obi wan"
-  scanf("%s", name);
-  int que_key = login(server, &que, name);
-  nr_on_server = take_feedback(server, que_key);
-  if (nr_on_server == -1){
-    printf("Taka nazwa już istnieje. Podaj inną nazwę.\n");
+int login_menu(int server, int* que){
+  int nr_on_server = -1;
+  while (nr_on_server < 0){
+    //login
+    char name[NAME_LENGTH] = "Obi wan";
+    printf("Dzień dobry! Podaj swoją nazwę użytkownika: "); //nie może zawierać spacji
+    scanf("%s", name);
+    int que_key = login(server, que, name);
+    printf("in login_menu %d\n", *que);
+    nr_on_server = take_feedback(server, que_key);
+    if (nr_on_server == -1){
+      printf("Taka nazwa już istnieje. Podaj inną nazwę.\n");
+    }
+    else if(nr_on_server == -2){
+      printf("Na tym serwerze jest zbyt wielu klientów. Nie możesz się zalogować\n");
+      msgctl(*que, IPC_RMID, NULL);
+      exit(0);
+    }
   }
-  else if(nr_on_server == -2){
-    printf("Na tym serwerze jest zbyt wielu klientów. Nie możesz się zalogować\n");
-    return 0;
-  }
+  return nr_on_server;
 }
 
 void register_topic(int server, int id, char topic_name[NAME_LENGTH], int que){
@@ -115,17 +119,15 @@ void shutdown(int server){
 
 int main(int argc, char *argv[]) {
   int server = msgget(SERVER_QUE_NR, 0);
-  int que;
-  int nr_on_server;
+  int que = 0;
 
-  while (nr_on_server < 0){
-    nr_on_server = login_menu();
-  }
+  int nr_on_server = login_menu(server, &que);
 
   printf("%d %d\n", que, nr_on_server);
   register_topic(server, nr_on_server, "sport", que);
-  register_topic(server, nr_on_server, "technology", que);
-  shutdown(server);
+  // register_topic(server, nr_on_server, "technology", que);
+  // msgctl(que, IPC_RMID, NULL);
+  // shutdown(server);
 
   return 0;
 }
