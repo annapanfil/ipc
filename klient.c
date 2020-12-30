@@ -22,12 +22,9 @@
 struct msgbuf{
   long type;
   int id;
+  int topic;
   int number;
   char text[MESSAGE_LENGTH];
-  union topic_tag{
-      char name[NAME_LENGTH];
-      int  id;
-  } topic_tag;
 };
 
 struct feedback{
@@ -46,7 +43,6 @@ int login(int server, int* que, char name[NAME_LENGTH]){
   struct msgbuf login_msg;
   int que_key = getpid();
   *que = msgget(que_key, 0644|IPC_CREAT);
-  printf("in login %d\n", *que);
   login_msg.type = 1;
   login_msg.id = que_key;
   strcpy(login_msg.text, name);
@@ -62,7 +58,6 @@ int login_menu(int server, int* que){
     printf("Dzień dobry! Podaj swoją nazwę użytkownika: "); //nie może zawierać spacji
     scanf("%s", name);
     int que_key = login(server, que, name);
-    printf("in login_menu %d\n", *que);
     nr_on_server = take_feedback(server, que_key);
     if (nr_on_server == -1){
       printf("Taka nazwa już istnieje. Podaj inną nazwę.\n");
@@ -82,25 +77,22 @@ void register_topic(int server, int id, char topic_name[NAME_LENGTH], int que){
   topic_msg.id = id;
   strcpy(topic_msg.text, topic_name);
   msgsnd(server, &topic_msg, sizeof(topic_msg)-sizeof(long), 0);
-
-  int feedback = take_feedback(que, 0);
-  // if (feedback != 0)
-    //obsługa błędów
 }
 
 
-void register_sub(int server, union topic_tag topic, int sublen){ //-1 -> forever
+void register_sub(int server, int topic, int sublen){ //-1 -> forever
+  printf("\e[0;36mⓘ register_sub\e[m\n");
   struct msgbuf sub_msg;
   sub_msg.type = 3;
-  sub_msg.topic_tag = topic;
+  sub_msg.topic = topic;
   sub_msg.number = sublen;
-  msgsnd(server, &sub_msg, sizeof(sub_msg)-sizeof(long), 0);
+  msgsnd(server, &sub_msg, sizeof(sub_msg)-sizeof(long), 0);  //BUG: coś się nie wysyła
 }
 
-void send_msg(int server, union topic_tag topic, char msg_text[MESSAGE_LENGTH]){
+void send_msg(int server, int topic, char msg_text[MESSAGE_LENGTH]){
   struct msgbuf message;
   message.type = 4;
-  message.topic_tag = topic;
+  message.topic = topic;
   strcpy(message.text, msg_text);
   msgsnd(server, &message, sizeof(message)-sizeof(long), 0);
 }
@@ -125,9 +117,14 @@ int main(int argc, char *argv[]) {
 
   printf("%d %d\n", que, nr_on_server);
   register_topic(server, nr_on_server, "sport", que);
+  int feedback = take_feedback(que, 0);
+  register_topic(server, nr_on_server, "sport", que);
+  feedback = take_feedback(que, 0);
+  register_sub(server, 2, -1);
+  feedback = take_feedback(que, 0);
   // register_topic(server, nr_on_server, "technology", que);
   // msgctl(que, IPC_RMID, NULL);
-  // shutdown(server);
+  shutdown(server);
 
   return 0;
 }
