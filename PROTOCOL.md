@@ -8,46 +8,47 @@
 - Maksymalna liczba zalogowanych użytkowników wynosi 15, maksymalna liczba utworzonych tematów – 20, maksymalna długość nazwy klienta/tematu – 30 znaków
 
 ## Struktura komunikatów
-Podstawowy komunikat:
+#### Podstawowy komunikat
 
 ```c
 struct msgbuf{
   long type;
   int id;
-  union topic_tag topic_tag;
+  int topic;
   int number;
-  char text[1024];
+  char text[MESSAGE_LENGTH];
 };
 ```
 
 - `type` – typ wysyłanej wiadomości. Poszczególne typy przedstawiono poniżej
 - `id` – identyfikator klienta wysyłającego wiadomość
-- `topic_tag` – identyfikacja tematu przez id lub nazwę
-
-    ```c
-    union topic_tag{
-      char name[30];
-      int  id;
-    };
-    ```
-
+- `topic` – numer tematu, którego dotyczy wiadomość
 - `number`, `tekst` – pola do użycia w zależności od typu komunikatu (opisane w poszczególnych scenariuszach komunikacji)
 
-
-Komunikat serwera informujący o stanie zakończenia operacji:
+#### Komunikat serwera informujący o stanie zakończenia operacji
 
 ```c
-struct msgserv{
+struct feedback{
   long type;
   int info;
 };
 ```
 
-- `type` odpowiada typowi operacji (lub numerowi kolejki klienta w przypadku logowania)
+- `type` – 1 (lub numer kolejki klienta w przypadku logowania)
 - `info` – informacja zwrotna dla klienta
 
+#### Wiadomość tekstowa od serwera
+```c
+struct text_msg{
+  long type;
+  char text[MESSAGE_LENGTH+NAME_LENGTH+2];
+};
+```
 
-#### Typy komunikatów
+- `type` – 2 (wiadomość do tematu) lub 3 (lista tematów na serwerze)
+- `text` – treść wiadomości
+
+#### Typy podstawowych komunikatów
 1. logowanie
 1. rejestracja tematu
 1. zapis na subskrybcję
@@ -56,7 +57,7 @@ struct msgserv{
 
 ## Scenariusze komunikacji
 #### Logowanie
-  `topic_tag` – niewykorzystane<br>
+  `topic` – niewykorzystane<br>
   `number` – niewykorzystane<br>
   `text` – nazwa klienta
 
@@ -65,15 +66,15 @@ struct msgserv{
   ```c
   struct client{
     int id;
-    char name[30];
+    char name[NAME_LENGTH];
   };
   ```
-  Serwer umieszcza w **swojej** kolejce komunikatów wiadomość o typie = numerowi klienta. W wiadomości znajduje się nowy identyfikator klienta – jego numer w tablicy klientów. Gdy nazwa klienta istnieje już w bazie – zwraca -1, gdy limit klientów został przekroczony – -2.
+  Serwer umieszcza w **swojej** kolejce komunikatów wiadomość o typie = numerowi klienta. W wiadomości znajduje się nowy identyfikator klienta – jego numer w tablicy klientów. Gdy nazwa klienta istnieje już w bazie – zwraca -1, gdy limit klientów został przekroczony: -2.
 
-  //Co jeżeli kolejka już istnieje?
+  Podczas swojej sesji klient może logować się tylko raz.
 
 #### Rejestracja tematu
-  `topic_tag` – niewykorzystane<br>
+  `topic` – niewykorzystane<br>
   `number` – niewykorzystane<br>
   `text` – nazwa tematu
 
@@ -82,33 +83,27 @@ struct msgserv{
   ```c
   struct topic{
     int id;
-    char name[30];
-    struct sub first_sub;
+    char name[NAME_LENGTH];
+    struct sub{
+      int client_id;
+      int length; //-1 → forever
+      struct sub* next_sub;
+    } first_sub;
   };
   ```
 
-`first_sub` jest początkiem listy jednokierunkowej z następującymi strukturami:
+  `first_sub` jest początkiem listy jednokierunkowej.
 
-  ```c
-  struct sub{
-    int client_que; //numer kolejki klienta
-    int length; //długość subskrybcji – ilość wiadomości lub -1 w przypadku subskrypcji na zawsze
-    struct sub* next_sub;
-  };
-  ```
-
-  Gdy nazwa tematu istnieje już w bazie, serwer umieszcza w  kolejce klienta wartość 1, gdy ilość tematów jest za duża – 2. W przeciwnym przypadku – 0.
+  Gdy nazwa tematu istnieje już w bazie, serwer umieszcza w  kolejce klienta wartość 1, gdy limit tematów został przekroczony: 2. W przeciwnym przypadku:0.
 
 #### Zapis na subskrybcję
-  `topic_tag` – temat<br>
   `number` – długość subskrybcji (-1 w przypadku nieskończonej subskrypcji)<br>
   `text` – niewykorzystane
 
   Serwer dopisuje klienta do listy subskrybcji w danym temacie (określanym przez strukturę opisaną przy rejestracji tematu).
-  Gdy temat nie istnieje, serwer umieszcza w  kolejce klienta wartość 1. W przeciwnym przypadku – 0.
+  Gdy temat nie istnieje, serwer umieszcza w  kolejce klienta wartość 1. W przeciwnym przypadku: 0.
 
 #### Wysłanie nowej wiadomości
-  `topic_tag` – temat<br>
   `number` – niewykorzystane<br>
   `text` – treść wiadomości
 
@@ -116,10 +111,10 @@ struct msgserv{
   Nie zwraca żadnej informacji do nadawcy.
 
 #### Odbiór wiadomości w sposób synchroniczny
-
+  Nie angażuje serwera. Tworzy proces potomny, który ciągle sprawdza czy w kolejce komunikatów danego klienta są wiadomości.
 
 #### Odbiór wiadomości w sposób asynchroniczny
-  Nie angażuje serwera. Sprawdza czy w kolejce komunikatów danego klienta są wiadomości określonego typu.
+  Nie angażuje serwera. Sprawdza czy w kolejce komunikatów danego klienta są wiadomości i odbiera wszystkie.
 
 #### Wyłączenie systemu
   Usuwa wszystkie kolejki klientów i kolejkę serwera, kończy program obsługujący serwer. (Uwaga: dane nie zostaną zapisane)

@@ -32,6 +32,11 @@ struct feedback{
   int info;
 };
 
+struct text_msg{
+  long type;
+  char text[MESSAGE_LENGTH+NAME_LENGTH+2];
+};
+
 int take_feedback(int que, int type){
   struct feedback feedback;
   msgrcv(que, &feedback, sizeof(feedback)-sizeof(long), type, 0);
@@ -79,19 +84,20 @@ void register_topic(int server, int id, char topic_name[NAME_LENGTH], int que){
   msgsnd(server, &topic_msg, sizeof(topic_msg)-sizeof(long), 0);
 }
 
-
-void register_sub(int server, int topic, int sublen){ //-1 -> forever
+void register_sub(int server, int id, int topic, int sublen){ //-1 -> forever
   printf("\e[0;36mⓘ register_sub\e[m\n");
   struct msgbuf sub_msg;
   sub_msg.type = 3;
+  sub_msg.id = id;
   sub_msg.topic = topic;
   sub_msg.number = sublen;
   msgsnd(server, &sub_msg, sizeof(sub_msg)-sizeof(long), 0);  //BUG: coś się nie wysyła
 }
 
-void send_msg(int server, int topic, char msg_text[MESSAGE_LENGTH]){
+void send_msg(int server, int id, int topic, char msg_text[MESSAGE_LENGTH]){
   struct msgbuf message;
   message.type = 4;
+  message.id = id;
   message.topic = topic;
   strcpy(message.text, msg_text);
   msgsnd(server, &message, sizeof(message)-sizeof(long), 0);
@@ -100,7 +106,15 @@ void send_msg(int server, int topic, char msg_text[MESSAGE_LENGTH]){
 void receive_msg_sync(){
 }
 
-void receive_msg_async(){ //???
+void receive_msg_async(int que){
+  int size;
+  while (size == -1){
+    struct text_msg message;
+    size = msgrcv(que, &message, sizeof(message)-sizeof(long), 2, IPC_NOWAIT);
+    if (size != -1){
+      printf("%s\n", message.text);
+    }
+  }
 }
 
 void shutdown(int server){
@@ -115,15 +129,13 @@ int main(int argc, char *argv[]) {
 
   int nr_on_server = login_menu(server, &que);
 
-  printf("%d %d\n", que, nr_on_server);
+  // printf("%d %d\n", que, nr_on_server);
   register_topic(server, nr_on_server, "sport", que);
-  int feedback = take_feedback(que, 0);
-  register_topic(server, nr_on_server, "sport", que);
-  feedback = take_feedback(que, 0);
-  register_sub(server, 2, -1);
-  feedback = take_feedback(que, 0);
-  // register_topic(server, nr_on_server, "technology", que);
-  // msgctl(que, IPC_RMID, NULL);
+  take_feedback(que, 1);
+  register_sub(server, nr_on_server, 0, -1);
+  take_feedback(que, 1);
+  send_msg(server, nr_on_server, 0, "Poland won!");
+  receive_msg_async(que);
   shutdown(server);
 
   return 0;
