@@ -9,8 +9,8 @@
 
 /*TODO:
 - nowy temat: sprawdzić poprawność
-- zapis na subskrybcję: dodać, sprawdzić poprawność
-- nowa wiadomość: dodać, rozesłać
+- zapis na subskrybcję: feedback
+- nowa wiadomość: feedback
 */
 
 #include <sys/types.h>
@@ -112,7 +112,7 @@ void add_sub(struct msgbuf *message, struct topic* topics, int last_topic, struc
 
   // printf("adres kolejnego: %d \n", topic->first_sub->next_sub);
   // struct sub* old_address = topic->first_sub;
-  
+
   //wstawiamy na początek listy
   new_sub->next_sub = topic->first_sub;
   topic->first_sub = new_sub;
@@ -162,16 +162,16 @@ void add_topic(struct msgbuf *message, struct topic* topics, int* topic_nr, stru
 }
 
 void send_msgs(struct msgbuf *msg_from_client, struct topic* topics, struct client* clients){
-  printf("\e[0;36mⓘ Add topic\e[m\n");
+  printf("\e[0;36mⓘ Send messages\e[m\n");
   struct sub* sub = (topics + (msg_from_client->topic)) -> first_sub;
+  struct text_msg msg;
+  msg.type = 2;
+  strcpy(msg.text, msg_from_client->text); //TODO: dodać "<temat>: " na początku wiadomości (sprintf?)
+
+  //send messages
   while (sub->next_sub != NULL){
     printf("checking %d\n", sub->client_que);
     if (sub->client_que != (clients+msg_from_client->id)->que){ //nie odsyłaj do nadawcy
-      //send message
-      struct text_msg msg;
-      msg.type = 2;
-      strcpy(msg.text, msg_from_client->text); //TODO: dodać "<temat>: " na początku wiadomości (sprintf?)
-
       printf("sending to %d\n", sub->client_que);
       msgsnd(sub->client_que, &msg, sizeof(msg)-sizeof(long), 0);
 

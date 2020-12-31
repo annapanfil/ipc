@@ -55,27 +55,6 @@ int login(int server, int* que, char name[NAME_LENGTH]){
   return que_key;
 }
 
-int login_menu(int server, int* que){
-  int nr_on_server = -1;
-  while (nr_on_server < 0){
-    //login
-    char name[NAME_LENGTH] = "Obi wan";
-    printf("Dzień dobry! Podaj swoją nazwę użytkownika: "); //nie może zawierać spacji
-    scanf("%s", name);
-    int que_key = login(server, que, name);
-    nr_on_server = take_feedback(server, que_key);
-    if (nr_on_server == -1){
-      printf("Taka nazwa już istnieje. Podaj inną nazwę.\n");
-    }
-    else if(nr_on_server == -2){
-      printf("Na tym serwerze jest zbyt wielu klientów. Nie możesz się zalogować\n");
-      msgctl(*que, IPC_RMID, NULL);
-      exit(0);
-    }
-  }
-  return nr_on_server;
-}
-
 void register_topic(int server, int id, char topic_name[NAME_LENGTH], int que){
   struct msgbuf topic_msg;
   topic_msg.type = 2;
@@ -123,6 +102,40 @@ void shutdown(int server){
   msgsnd(server, &message, sizeof(message)-sizeof(long), 0);
 }
 
+int login_menu(int server, int* que){
+  int nr_on_server = -1;
+  while (nr_on_server < 0){
+    //login
+    char name[NAME_LENGTH] = "Obi wan";
+    printf("Dzień dobry! Podaj swoją nazwę użytkownika: "); //nie może zawierać spacji
+    scanf("%s", name);
+    int que_key = login(server, que, name);
+    nr_on_server = take_feedback(server, que_key);
+    if (nr_on_server == -1){
+      printf("Taka nazwa już istnieje. Podaj inną nazwę.\n");
+    }
+    else if(nr_on_server == -2){
+      printf("Na tym serwerze jest zbyt wielu klientów. Nie możesz się zalogować\n");
+      msgctl(*que, IPC_RMID, NULL);
+      exit(0);
+    }
+  }
+  return nr_on_server;
+}
+
+void msg_menu(int server, int id){
+    char msg[MESSAGE_LENGTH] = "Empty message";
+    int topic;
+
+    printf("Podaj numer tematu: "); //nie może zawierać spacji
+    scanf("%d", &topic);
+    printf("Wpisz treść wiadomości: \n> "); //nie może zawierać spacji
+    scanf("%s", msg);
+    send_msg(server, id, topic, msg);
+
+    // take_feedback(server, que_key);
+}
+
 int main(int argc, char *argv[]) {
   int server = msgget(SERVER_QUE_NR, 0);
   int que = 0;
@@ -134,8 +147,12 @@ int main(int argc, char *argv[]) {
   take_feedback(que, 1);
   register_sub(server, nr_on_server, 0, -1);
   take_feedback(que, 1);
-  send_msg(server, nr_on_server, 0, "Poland won!");
-  receive_msg_async(que);
+
+  msg_menu(server, nr_on_server);
+  // receive_msg_async(que);
+  struct text_msg message;
+  msgrcv(que, &message, sizeof(message)-sizeof(long), 2, 0);
+  printf("%s\n", message.text);
   shutdown(server);
 
   return 0;
