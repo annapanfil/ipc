@@ -9,9 +9,7 @@
 /*TODO:
 - nowy temat: komunikacja z uzytkownikiem, obsługa błędów
 - zapis na subskrybcję: komunikacja z uzytkownikiem, odbiór komunikatu
-- nowa wiadomość: komunikacja z uzytkownikiem
-- otrzymywanie wiadomości
-- menu główne
+- otrzymywanie wiadomości synchronicznie
 - podział na mniejsze funkcje
 */
 #define NAME_LENGTH 30
@@ -127,7 +125,7 @@ void msg_menu(int server, int id){
     char msg[MESSAGE_LENGTH] = "Empty message";
     int topic;
 
-    printf("Podaj numer tematu: "); //nie może zawierać spacji
+    printf("Podaj numer tematu: ");
     scanf("%d", &topic);
     printf("Wpisz treść wiadomości: \n> "); //nie może zawierać spacji
     scanf("%s", msg);
@@ -139,21 +137,41 @@ void msg_menu(int server, int id){
 int main(int argc, char *argv[]) {
   int server = msgget(SERVER_QUE_NR, 0);
   int que = 0;
+  int choice = ' ';
 
   int nr_on_server = login_menu(server, &que);
-
   // printf("%d %d\n", que, nr_on_server);
-  register_topic(server, nr_on_server, "sport", que);
-  take_feedback(que, 1);
-  register_sub(server, nr_on_server, 0, -1);
-  take_feedback(que, 1);
 
-  msg_menu(server, nr_on_server);
-  // receive_msg_async(que);
-  struct text_msg message;
-  msgrcv(que, &message, sizeof(message)-sizeof(long), 2, 0);
-  printf("%s\n", message.text);
-  shutdown(server);
+  do{
+    printf("1 – utwórz nowy temat\n2 – zapisz się na subskrybcję\n3 – nowa wiadomość\n4 – odbierz wiadomości\n5 – odbieraj wiadomości synchronicznie\n6 – wyłącz system\n7 – wyloguj\n");
+    while ((choice = getchar())<=' ');
+    switch (choice) {
+      case '1':
+        register_topic(server, nr_on_server, "sport", que);
+        take_feedback(que, 1);
+        break;
+      case '2':
+        register_sub(server, nr_on_server, 0, -1);
+        take_feedback(que, 1);
+        break;
+      case '3':
+        msg_menu(server, nr_on_server);
+        break;
+      case '4':
+        receive_msg_async(que);
+      case '5':
+        receive_msg_sync();
+      case '6':
+        shutdown(server);
+        printf("Bywaj!\n");
+        break;
+      case '7':
+        printf("Bywaj!\n");
+        break;
+      default:
+        printf("Niepoprawny numer '%c'.\n", choice);
+    }
+  }while(choice != '7' && choice != '6');
 
   return 0;
 }
