@@ -2,6 +2,7 @@
 //typ2 - nowy temat
 //typ3 - zapis na subskrybcję
 //typ4 - nowa wiadomość
+//typ ??? - odczyt tematów
 //typ5 - wyłączenie systemu
 
 //usuwanie wszystkich kolejek:
@@ -12,6 +13,7 @@
   usuwanie zerowych subskrybcji,
   dodać "<temat>: " na początku wiadomości (sprintf?)
   shutdown: wysłać wiadomość do wszystkich klientów
+- odczyt tematów (w tym zmiana sygnału wyłączenia)
 */
 
 #include <sys/types.h>

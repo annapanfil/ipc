@@ -117,6 +117,8 @@ struct text_msg{
 #### Odbiór wiadomości w sposób asynchroniczny
   Nie angażuje serwera. Sprawdza, czy w kolejce komunikatów danego klienta są wiadomości i odbiera wszystkie.
 
+#### Odczyt tematów z serwera
+
 #### Wyłączenie systemu
   Usuwa wszystkie kolejki klientów i kolejkę serwera, kończy program obsługujący serwer. (Uwaga: dane nie zostaną zapisane)
 

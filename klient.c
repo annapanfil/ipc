@@ -50,20 +50,20 @@ void print_info(char text[100]){
 }
 
 int get_topics(int server, int id, int que){
-  // int nr_of_topics = 0;
-  // struct msgbuf msg;
-  // msg.type = 5;
-  // msg.id = id;
-  // msgsnd(server, &msg, sizeof(msg)-sizeof(long), 0);
-  //
-  // struct text_msg message;
-  // printf("\n-------TEMATY NA SERWERZE-------\n");
-  // while (MESSAGE_TEXT != "NULL000"){
-  //   msgrcv(que, &message, sizeof(message)-sizeof(long), 3, IPC_NOWAIT);
-  //   printf("%s\n", message.text);
-  //   }
-  // }
-  // return nr_of_topics();
+  int nr_of_topics = 0;
+  struct msgbuf msg;
+  msg.type = 5;
+  msg.id = id;
+  msgsnd(server, &msg, sizeof(msg)-sizeof(long), 0);
+
+  struct text_msg message;
+  printf("\n-------TEMATY NA SERWERZE-------\n");
+  while (MESSAGE_TEXT != "NULL000"){
+    msgrcv(que, &message, sizeof(message)-sizeof(long), 3, IPC_NOWAIT);
+    printf("%s\n", message.text);
+    }
+  }
+  return nr_of_topics();
 }
 
 int login(int server, int* que, char name[NAME_LENGTH]){
@@ -204,6 +204,8 @@ void topic_menu(int server, int id, int que){
 void sub_menu(int server, int id, int que){
     int topic;
     int length;
+
+    get_topics(server, id, que);
 
     print_info("Podaj numer tematu, który chcesz subskrybować: ");
     scanf("%d", &topic);
