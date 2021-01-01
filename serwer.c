@@ -8,9 +8,10 @@
 // ipcs -q | tail -n +4 | tr -s " " | cut -d" " -f 2 | xargs -I\{\} ipcrm -q {}
 
 /*TODO:
-- nowy temat: sprawdzić poprawność
-- zapis na subskrybcję: feedback
-- nowa wiadomość: feedback
+- nowa wiadomość:
+  usuwanie zerowych subskrybcji,
+  dodać "<temat>: " na początku wiadomości (sprintf?)
+  shutdown: wysłać wiadomość do wszystkich klientów
 */
 
 #include <sys/types.h>
@@ -34,7 +35,6 @@ struct client{
 };
 
 struct topic{
-  //czy jest przypisany do konkretnego klienta czy wszyscy mogą w nim pisać?
   int id;
   char name[NAME_LENGTH];
   struct sub{
@@ -110,22 +110,9 @@ void add_sub(struct msgbuf *message, struct topic* topics, int last_topic, struc
 
   struct topic* topic = (topics + message->topic);
 
-  // printf("adres kolejnego: %d \n", topic->first_sub->next_sub);
-  // struct sub* old_address = topic->first_sub;
-
   //wstawiamy na początek listy
   new_sub->next_sub = topic->first_sub;
   topic->first_sub = new_sub;
-
-  // wypisanie całej listy
-  // struct sub* sub = topic->first_sub;
-  // while (sub->next_sub != NULL){
-  //   printf("\e[0;36m%d ->\e[m", sub->client_que);
-  //   sub = sub->next_sub;
-  // }
-  // printf("\n");
-
-  // printf("powinien być taki adres kolejnego: %d pośrednio: %d jest taki: %d\n", (old_address->next_sub), (new_sub->next_sub->next_sub), (topic->first_sub->next_sub->next_sub));
 
   send_feedback(new_sub->client_que, 1, 0);
 }
@@ -161,34 +148,40 @@ void add_topic(struct msgbuf *message, struct topic* topics, int* topic_nr, stru
   }
 }
 
-void send_msgs(struct msgbuf *msg_from_client, struct topic* topics, struct client* clients){
+void send_msgs(struct msgbuf *msg_from_client, struct topic* topics, int last_topic, struct client* clients){
   printf("\e[0;36mⓘ Send messages\e[m\n");
-  struct sub* sub = (topics + (msg_from_client->topic)) -> first_sub;
-  struct text_msg msg;
-  msg.type = 2;
-  strcpy(msg.text, msg_from_client->text); //TODO: dodać "<temat>: " na początku wiadomości (sprintf?)
 
-  //send messages
-  while (sub->next_sub != NULL){
-    printf("checking %d\n", sub->client_que);
-    if (sub->client_que != (clients+msg_from_client->id)->que){ //nie odsyłaj do nadawcy
-      printf("sending to %d\n", sub->client_que);
-      msgsnd(sub->client_que, &msg, sizeof(msg)-sizeof(long), 0);
-
-      //decrement subscription lenght
-      if(sub->length != -1){
-        sub->length -= 1;
-        // if (sub->length == 0){
-        //TODO: delete sub from list
-        //delete sub object
-        // }
-
-      }
-    }
-    printf("%d\n", sub->next_sub->client_que);
-    sub = sub->next_sub;
+  if ((msg_from_client->topic) > last_topic){
+    send_feedback((clients+msg_from_client->id)->que, 1, 1);  //temat nie istnieje
+    return;
   }
+  else{
+    struct sub* sub = (topics + (msg_from_client->topic)) -> first_sub;
+    struct text_msg msg;
+    msg.type = 2;
+    strcpy(msg.text, msg_from_client->text);
+    send_feedback((clients+msg_from_client->id)->que, 1, 0);  //OK
+    //send messages
+    while (sub->next_sub != NULL){
+      printf("checking %d\n", sub->client_que);
+      if (sub->client_que != (clients+msg_from_client->id)->que){ //nie odsyłaj do nadawcy
+        printf("sending to %d\n", sub->client_que);
+        msgsnd(sub->client_que, &msg, sizeof(msg)-sizeof(long), 0);
 
+        //decrement subscription lenght
+        if(sub->length != -1){
+          sub->length -= 1;
+          // if (sub->length == 0){
+          // delete sub from list
+          //delete sub object
+          // }
+
+        }
+      }
+      printf("%d\n", sub->next_sub->client_que);
+      sub = sub->next_sub;
+    }
+  }
 }
 
 void shutdown(int me, struct client* clients, int last_client){
@@ -216,20 +209,17 @@ int main(int argc, char *argv[]) {
   int info;
 
   while (running) {
-    printf("\e[0;36mⓘ Waiting for message\e[m\n");
+    // printf("\e[0;36mⓘ Waiting for message\e[m\n");
     msgrcv(my_que, &message, sizeof(message)-sizeof(long), -5, 0);
-    printf("\e[0;36mⓘ Received %ld\e[m\n", message.type);
+    // printf("\e[0;36mⓘ Received %ld\e[m\n", message.type);
     switch (message.type) {
       case 1:
         info = login(&message, clients, &next_client);
         send_feedback(my_que, message.id, info);
         break;
       case 2: add_topic(&message, topics, &next_topic, clients); break;
-      case 3:
-        add_sub(&message, topics, next_topic-1, clients);
-        // printf("%d\n", (topics+message.topic)->first_sub.client_que);
-        break;
-      case 4: send_msgs(&message, topics, clients); break;
+      case 3: add_sub(&message, topics, next_topic-1, clients); break;
+      case 4: send_msgs(&message, topics, next_topic-1, clients); break;
       case 5: shutdown(my_que, clients, next_client-1); running = false; break;
     }
   }

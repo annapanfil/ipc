@@ -3,9 +3,9 @@
 [//]: [TOC]
 
 ## Informacje ogólne
-- Użyto kolejki komunikatów dla serwera o numerze 12345 i kolejki komunikatów dla każdego klienta – o numerze opartym o jego PID.
+- Użyto kolejki komunikatów dla serwera o kluczu 12345 i kolejki komunikatów dla każdego klienta – o kluczu opartym o jego PID.
 - Klient wysyła wiadomości do kolejki serwera (w trybie blokującym), serwer – do kolejki odpowiedniego klienta (z wyjątkiem błędu logowania)
-- Maksymalna liczba zalogowanych użytkowników wynosi 15, maksymalna liczba utworzonych tematów – 20, maksymalna długość nazwy klienta/tematu – 30 znaków
+- Maksymalna liczba zalogowanych użytkowników jest ograniczona stałą `CLIENTS_NR`. Maksymalna liczba utworzonych tematów – `TOPICS_NR`, maksymalna długość nazwy klienta/tematu – `NAME_LENGTH` znaków, maksymalna długość wiadomości: `MESSAGE_LENGTH` znaków.
 
 ## Struktura komunikatów
 #### Podstawowy komunikat
@@ -54,6 +54,7 @@ struct text_msg{
 1. zapis na subskrybcję
 1. nowa wiadomość
 1. wyłączenie systemu
+1. zapytanie o tematy
 
 ## Scenariusze komunikacji
 #### Logowanie
@@ -69,7 +70,7 @@ struct text_msg{
     char name[NAME_LENGTH];
   };
   ```
-  Serwer umieszcza w **swojej** kolejce komunikatów wiadomość o typie = numerowi klienta. W wiadomości znajduje się nowy identyfikator klienta – jego numer w tablicy klientów. Gdy nazwa klienta istnieje już w bazie – zwraca -1, gdy limit klientów został przekroczony: -2.
+  Serwer umieszcza w **swojej** kolejce komunikatów wiadomość o typie równym numerowi klienta. W wiadomości znajduje się nowy identyfikator klienta – jego numer w tablicy klientów. Gdy nazwa klienta istnieje już w bazie – zwraca -1, gdy limit klientów został przekroczony: -2.
 
   Podczas swojej sesji klient może logować się tylko raz.
 
@@ -88,13 +89,13 @@ struct text_msg{
       int client_id;
       int length; //-1 → forever
       struct sub* next_sub;
-    } first_sub;
+    }* first_sub;
   };
   ```
 
   `first_sub` jest początkiem listy jednokierunkowej.
 
-  Gdy nazwa tematu istnieje już w bazie, serwer umieszcza w  kolejce klienta wartość 1, gdy limit tematów został przekroczony: 2. W przeciwnym przypadku:0.
+  Gdy nazwa tematu istnieje już w bazie, serwer umieszcza w  kolejce klienta wartość 1, gdy limit tematów został przekroczony: 2. W przeciwnym przypadku: 0.
 
 #### Zapis na subskrybcję
   `number` – długość subskrybcji (-1 w przypadku nieskończonej subskrypcji)<br>
@@ -108,13 +109,13 @@ struct text_msg{
   `text` – treść wiadomości
 
   Serwer rozsyła wiadomość do kolejek komunikatów wszystkich subskrybentów danego tematu (z wyłączeniem nadawcy wiadomości).
-  Nie zwraca żadnej informacji do nadawcy.
+  Gdy temat nie istnieje, serwer umieszcza w  kolejce klienta wartość 1. W przeciwnym przypadku: 0.
 
 #### Odbiór wiadomości w sposób synchroniczny
-  Nie angażuje serwera. Tworzy proces potomny, który ciągle sprawdza czy w kolejce komunikatów danego klienta są wiadomości.
+  Nie angażuje serwera. Tworzy proces potomny, który ciągle sprawdza, czy w kolejce komunikatów danego klienta są wiadomości.
 
 #### Odbiór wiadomości w sposób asynchroniczny
-  Nie angażuje serwera. Sprawdza czy w kolejce komunikatów danego klienta są wiadomości i odbiera wszystkie.
+  Nie angażuje serwera. Sprawdza, czy w kolejce komunikatów danego klienta są wiadomości i odbiera wszystkie.
 
 #### Wyłączenie systemu
   Usuwa wszystkie kolejki klientów i kolejkę serwera, kończy program obsługujący serwer. (Uwaga: dane nie zostaną zapisane)
