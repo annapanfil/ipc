@@ -8,7 +8,6 @@
 #include <signal.h> //kill
 
 /*TODO:
-- odczyt tematów z serwera
 - spacje przy inpucie
 */
 
@@ -58,12 +57,12 @@ int get_topics(int server, int id, int que){
 
   struct text_msg message;
   printf("\n-------TEMATY NA SERWERZE-------\n");
-  while (MESSAGE_TEXT != "NULL000"){
-    msgrcv(que, &message, sizeof(message)-sizeof(long), 3, IPC_NOWAIT);
+  while (strcmp(message.text, "") != 0){
+    msgrcv(que, &message, sizeof(message)-sizeof(long), 3, 0);
     printf("%s\n", message.text);
-    }
+    nr_of_topics++;
   }
-  return nr_of_topics();
+  return nr_of_topics;
 }
 
 int login(int server, int* que, char name[NAME_LENGTH]){
@@ -137,7 +136,7 @@ void receive_msg_async(int que){
 
 void shutdown(int server){
   struct msgbuf message;
-  message.type = 5;
+  message.type = 6;
   msgsnd(server, &message, sizeof(message)-sizeof(long), 0);
 }
 
@@ -167,9 +166,16 @@ int login_menu(int server, int* que){
 void msg_menu(int server, int id, int que){
     char msg[MESSAGE_LENGTH] = "Empty message";
     int topic;
-    get_topics(server, id, que);
-    print_info("Podaj numer tematu: ");
-    scanf("%d", &topic);
+    int nr_of_topics = get_topics(server, id, que);
+    char choice = 'y';
+    do{
+      print_info("Podaj numer tematu, który chcesz subskrybować: ");
+      scanf("%d", &topic);
+      if (topic>=nr_of_topics){
+        print_info("Tego tematu nie ma na liście. Czy mimo to chcesz go wybrać? y/n");
+        while ((choice = getchar())<=' ');
+      }
+    }while(choice != 'y');
     print_info("Wpisz treść wiadomości: \n> "); //nie może zawierać spacji
     scanf("%s", msg);
     send_msg(server, id, topic, msg);
@@ -185,7 +191,9 @@ void msg_menu(int server, int id, int que){
 void topic_menu(int server, int id, int que){
     char topic[NAME_LENGTH] = "New topic";
 
-    print_info("Podaj nazwę tematu: "); //nie może zawierać spacji
+    get_topics(server, id, que);
+
+    print_info("Podaj nazwę nowego tematu: "); //nie może zawierać spacji
     scanf("%s", topic);
 
     register_topic(server, id, topic);
@@ -204,11 +212,18 @@ void topic_menu(int server, int id, int que){
 void sub_menu(int server, int id, int que){
     int topic;
     int length;
+    char choice = 'y';
 
-    get_topics(server, id, que);
+    int nr_of_topics = get_topics(server, id, que);
 
-    print_info("Podaj numer tematu, który chcesz subskrybować: ");
-    scanf("%d", &topic);
+    do{
+      print_info("Podaj numer tematu, który chcesz subskrybować: ");
+      scanf("%d", &topic);
+      if (topic>=nr_of_topics){
+        print_info("Tego tematu nie ma na liście. Czy mimo to chcesz go wybrać? y/n");
+        while ((choice = getchar())<=' ');
+      }
+    }while(choice != 'y');
     print_info("Ile wiadomości z tego tematu chcesz otrzymać? (-1 → wszystkie): ");
     scanf("%d", &length);
 
@@ -235,10 +250,10 @@ int main(int argc, char *argv[]) {
   take_feedback(que, 1);
   register_sub(server, nr_on_server, 0, -1);
   take_feedback(que, 1);
-  get_topics();
+  int nr_of_topics = get_topics(server, nr_on_server, que);
 
   do{
-    print_info("\n------------MENU------------------\n1 – utwórz nowy temat\n2 – zapisz się na subskrybcję\n3 – nowa wiadomość\n4 – odbierz wiadomości\n5 – włącz/wyłącz synchroniczne odbieranie wiadomości\n6 – wyłącz system\n7 – wyloguj\n");
+    print_info("\n------------MENU------------------\n1 – utwórz nowy temat\n2 – zapisz się na subskrybcję\n3 – nowa wiadomość\n4 – odbierz wiadomości\n5 – włącz/wyłącz synchroniczne odbieranie wiadomości\n6 – wyłącz system\n7 – zakończ\n");
     while ((choice = getchar())<=' ');
     switch (choice) {
       case '1':
@@ -256,6 +271,7 @@ int main(int argc, char *argv[]) {
       case '5':
         receive_msg_sync(&child_pid, que);
         break;
+      case '8': get_topics(server, nr_on_server, que); break;
       case '6':
         shutdown(server);
         break;

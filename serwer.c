@@ -2,8 +2,8 @@
 //typ2 - nowy temat
 //typ3 - zapis na subskrybcję
 //typ4 - nowa wiadomość
-//typ ??? - odczyt tematów
-//typ5 - wyłączenie systemu
+//typ5 - odczyt tematów
+//typ6 - wyłączenie systemu
 
 //usuwanie wszystkich kolejek:
 // ipcs -q | tail -n +4 | tr -s " " | cut -d" " -f 2 | xargs -I\{\} ipcrm -q {}
@@ -186,6 +186,19 @@ void send_msgs(struct msgbuf *msg_from_client, struct topic* topics, int last_to
   }
 }
 
+void send_topics(struct msgbuf *msg_from_client, struct topic* topics, int last_topic, struct client* clients){
+  int que = (clients + msg_from_client->id) -> que;
+  struct text_msg message;
+  message.type = 3;
+  for (int i=0; i<= last_topic; i++){
+    sprintf(message.text, "%d. %s", i, (topics + i)-> name);
+    printf("%s\n", message.text);
+    msgsnd(que, &message, sizeof(message)-sizeof(long), 0);
+  }
+  strcpy(message.text, "");
+  msgsnd(que, &message, sizeof(message)-sizeof(long), 0);
+}
+
 void shutdown(int me, struct client* clients, int last_client){
   printf("\e[0;36mⓘ Shutdown\e[m\n");
   for (int i=0; i<=last_client; i++){
@@ -212,7 +225,7 @@ int main(int argc, char *argv[]) {
 
   while (running) {
     // printf("\e[0;36mⓘ Waiting for message\e[m\n");
-    msgrcv(my_que, &message, sizeof(message)-sizeof(long), -5, 0);
+    msgrcv(my_que, &message, sizeof(message)-sizeof(long), -6, 0);
     // printf("\e[0;36mⓘ Received %ld\e[m\n", message.type);
     switch (message.type) {
       case 1:
@@ -222,7 +235,8 @@ int main(int argc, char *argv[]) {
       case 2: add_topic(&message, topics, &next_topic, clients); break;
       case 3: add_sub(&message, topics, next_topic-1, clients); break;
       case 4: send_msgs(&message, topics, next_topic-1, clients); break;
-      case 5: shutdown(my_que, clients, next_client-1); running = false; break;
+      case 5: send_topics(&message, topics, next_topic-1, clients); break;
+      case 6: shutdown(my_que, clients, next_client-1); running = false; break;
     }
   }
 
