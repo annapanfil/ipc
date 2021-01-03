@@ -9,6 +9,8 @@
 
 /*TODO:
 - spacje przy inpucie
+
+- priorytet wysyłanej wiadomości ? ("Proces wysyła treść rozgłaszanej wiadomości wraz z jej typem i priorytetem")
 */
 
 #define NAME_LENGTH 30
@@ -33,6 +35,7 @@ struct text_msg{
   char text[MESSAGE_LENGTH+NAME_LENGTH+2];
 };
 
+
 int take_feedback(int que, int type){
   struct feedback feedback;
   msgrcv(que, &feedback, sizeof(feedback)-sizeof(long), type, 0);
@@ -45,25 +48,9 @@ void print_error(char text[100]){
 }
 
 void print_info(char text[100]){
-  printf("\e[0;34m%s\e[m", text);
+  printf("\e[1;34m%s\e[m", text);
 }
 
-int get_topics(int server, int id, int que){
-  int nr_of_topics = 0;
-  struct msgbuf msg;
-  msg.type = 5;
-  msg.id = id;
-  msgsnd(server, &msg, sizeof(msg)-sizeof(long), 0);
-
-  struct text_msg message;
-  printf("\n-------TEMATY NA SERWERZE-------\n");
-  while (strcmp(message.text, "") != 0){
-    msgrcv(que, &message, sizeof(message)-sizeof(long), 3, 0);
-    printf("%s\n", message.text);
-    nr_of_topics++;
-  }
-  return nr_of_topics;
-}
 
 int login(int server, int* que, char name[NAME_LENGTH]){
   struct msgbuf login_msg;
@@ -102,7 +89,7 @@ void send_msg(int server, int id, int topic, char msg_text[MESSAGE_LENGTH]){
   msgsnd(server, &message, sizeof(message)-sizeof(long), 0);
 }
 
-void receive_msg_sync(int* pid, int que){
+void receive_msg_async(int* pid, int que){
   if (*pid == -1){  //nie odbierał → zaczyna odbierać
     struct text_msg message;
     int x;
@@ -122,7 +109,7 @@ void receive_msg_sync(int* pid, int que){
   }
 }
 
-void receive_msg_async(int que){
+void receive_msg_sync(int que){
   int size = 0;
   struct text_msg message;
   while (size != -1){
@@ -134,11 +121,29 @@ void receive_msg_async(int que){
   print_info("Nie masz więcej nowych wiadomości.\n");
 }
 
+int get_topics(int server, int id, int que){
+  int nr_of_topics = 0;
+  struct msgbuf msg;
+  msg.type = 5;
+  msg.id = id;
+  msgsnd(server, &msg, sizeof(msg)-sizeof(long), 0);
+
+  struct text_msg message;
+  printf("\n-------TEMATY NA SERWERZE-------\n");
+  do{
+    msgrcv(que, &message, sizeof(message)-sizeof(long), 3, 0);
+    printf("%s\n", message.text);
+    nr_of_topics++;
+  }while (strcmp(message.text, "") != 0);
+  return nr_of_topics;
+}
+
 void shutdown(int server){
   struct msgbuf message;
   message.type = 6;
   msgsnd(server, &message, sizeof(message)-sizeof(long), 0);
 }
+
 
 int login_menu(int server, int* que){
   int nr_on_server = -1;
@@ -161,31 +166,6 @@ int login_menu(int server, int* que){
       print_info("Zalogowano\n");
   }
   return nr_on_server;
-}
-
-void msg_menu(int server, int id, int que){
-    char msg[MESSAGE_LENGTH] = "Empty message";
-    int topic;
-    int nr_of_topics = get_topics(server, id, que);
-    char choice = 'y';
-    do{
-      print_info("Podaj numer tematu, który chcesz subskrybować: ");
-      scanf("%d", &topic);
-      if (topic>=nr_of_topics){
-        print_info("Tego tematu nie ma na liście. Czy mimo to chcesz go wybrać? y/n");
-        while ((choice = getchar())<=' ');
-      }
-    }while(choice != 'y');
-    print_info("Wpisz treść wiadomości: \n> "); //nie może zawierać spacji
-    scanf("%s", msg);
-    send_msg(server, id, topic, msg);
-
-    int feedback = take_feedback(que, 1);
-    if (feedback == 1){
-      print_error("Taki temat nie istnieje.");
-    }
-    else if (feedback == 0)
-      print_info("Wiadomość wysłana");
 }
 
 void topic_menu(int server, int id, int que){
@@ -217,6 +197,7 @@ void sub_menu(int server, int id, int que){
     int nr_of_topics = get_topics(server, id, que);
 
     do{
+      choice = 'y';
       print_info("Podaj numer tematu, który chcesz subskrybować: ");
       scanf("%d", &topic);
       if (topic>=nr_of_topics){
@@ -237,6 +218,32 @@ void sub_menu(int server, int id, int que){
       print_info("Dodano subkrybcję");
 }
 
+void msg_menu(int server, int id, int que){
+    char msg[MESSAGE_LENGTH] = "Empty message";
+    int topic;
+    int nr_of_topics = get_topics(server, id, que);
+    char choice = 'y';
+    do{
+      choice = 'y';
+      print_info("Podaj numer tematu: ");
+      scanf("%d", &topic);
+      if (topic>=nr_of_topics){
+        print_info("Tego tematu nie ma na liście. Czy mimo to chcesz go wybrać? y/n");
+        while ((choice = getchar())<=' ');
+      }
+    }while(choice != 'y');
+    print_info("Wpisz treść wiadomości: \n> "); //nie może zawierać spacji
+    scanf("%s", msg);
+    send_msg(server, id, topic, msg);
+
+    int feedback = take_feedback(que, 1);
+    if (feedback == 1){
+      print_error("Taki temat nie istnieje.");
+    }
+    else if (feedback == 0)
+      print_info("Wiadomość wysłana");
+}
+
 
 int main(int argc, char *argv[]) {
   int server = msgget(SERVER_QUE_NR, 0);
@@ -246,39 +253,27 @@ int main(int argc, char *argv[]) {
 
   int nr_on_server = login_menu(server, &que);
   // printf("%d %d\n", que, nr_on_server);
-  register_topic(server, nr_on_server, "sport");
-  take_feedback(que, 1);
-  register_sub(server, nr_on_server, 0, -1);
-  take_feedback(que, 1);
-  int nr_of_topics = get_topics(server, nr_on_server, que);
+  // register_topic(server, nr_on_server, "sport");
+  // take_feedback(que, 1);
+  // register_sub(server, nr_on_server, 0, -1);
+  // take_feedback(que, 1);
+  // int nr_of_topics = get_topics(server, nr_on_server, que);
 
   do{
-    print_info("\n------------MENU------------------\n1 – utwórz nowy temat\n2 – zapisz się na subskrybcję\n3 – nowa wiadomość\n4 – odbierz wiadomości\n5 – włącz/wyłącz synchroniczne odbieranie wiadomości\n6 – wyłącz system\n7 – zakończ\n");
+    print_info("\n------------MENU------------------\n1 – utwórz nowy temat\n2 – zapisz się na subskrybcję\n3 – nowa wiadomość\n4 – odbierz wiadomości\n5 – włącz/wyłącz asynchroniczne odbieranie wiadomości\n6 – wyślwietl listę tematów na serwerze\n7 – wyłącz system\n8 – zakończ\n");
     while ((choice = getchar())<=' ');
     switch (choice) {
-      case '1':
-        topic_menu(server, nr_on_server, que);
-        break;
-      case '2':
-        sub_menu(server, nr_on_server, que);
-        break;
-      case '3':
-        msg_menu(server, nr_on_server, que);
-        break;
-      case '4':
-        receive_msg_async(que);
-        break;
-      case '5':
-        receive_msg_sync(&child_pid, que);
-        break;
-      case '8': get_topics(server, nr_on_server, que); break;
-      case '6':
-        shutdown(server);
-        break;
-      case '7': break;
+      case '1': topic_menu(server, nr_on_server, que); break;
+      case '2': sub_menu(server, nr_on_server, que); break;
+      case '3': msg_menu(server, nr_on_server, que); break;
+      case '4': receive_msg_sync(&child_pid, que);  break;
+      case '5': receive_msg_async(que); break;
+      case '6': get_topics(server, nr_on_server, que); break; //TODO: delete
+      case '7': shutdown(server); break;
+      case '8': break;
       default: printf("\e[0;31mNiepoprawny numer '%c'.\n\e[m", choice);
     }
-  }while(choice != '7' && choice != '6');
+  }while(choice != '7' && choice != '8');
 
   if (child_pid != -1)
     kill(child_pid, 15);

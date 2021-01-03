@@ -6,6 +6,7 @@
 - Użyto kolejki komunikatów dla serwera o kluczu 12345 i kolejki komunikatów dla każdego klienta – o kluczu opartym o jego PID.
 - Klient wysyła wiadomości do kolejki serwera (w trybie blokującym), serwer – do kolejki odpowiedniego klienta (z wyjątkiem błędu logowania)
 - Maksymalna liczba zalogowanych użytkowników jest ograniczona stałą `CLIENTS_NR`. Maksymalna liczba utworzonych tematów – `TOPICS_NR`, maksymalna długość nazwy klienta/tematu – `NAME_LENGTH` znaków, maksymalna długość wiadomości: `MESSAGE_LENGTH` znaków.
+- serwer powinien być uruchamiany jako pierwszy
 
 ## Struktura komunikatów
 #### Podstawowy komunikat
@@ -45,19 +46,20 @@ struct text_msg{
 };
 ```
 
-- `type` – 2 (wiadomość do tematu) lub 3 (lista tematów na serwerze)
+- `type` – 2 (wiadomość z subskrybowanego tematu) lub 3 (lista tematów na serwerze)
 - `text` – treść wiadomości
 
 #### Typy podstawowych komunikatów
 1. logowanie
-1. rejestracja tematu
+1. nowy temat
 1. zapis na subskrybcję
 1. nowa wiadomość
-1. wyłączenie systemu
 1. zapytanie o tematy
+1. wyłączenie systemu
 
 ## Scenariusze komunikacji
 #### Logowanie
+  `id` – klucz kolejki klienta<br>
   `topic` – niewykorzystane<br>
   `number` – niewykorzystane<br>
   `text` – nazwa klienta
@@ -108,16 +110,21 @@ struct text_msg{
   `number` – niewykorzystane<br>
   `text` – treść wiadomości
 
-  Serwer rozsyła wiadomość do kolejek komunikatów wszystkich subskrybentów danego tematu (z wyłączeniem nadawcy wiadomości).
+  Serwer rozsyła wiadomość poprzedzoną nazwą tematu do kolejek komunikatów wszystkich subskrybentów danego tematu (z wyłączeniem nadawcy wiadomości).
   Gdy temat nie istnieje, serwer umieszcza w  kolejce klienta wartość 1. W przeciwnym przypadku: 0.
 
 #### Odbiór wiadomości w sposób synchroniczny
-  Nie angażuje serwera. Tworzy proces potomny, który ciągle sprawdza, czy w kolejce komunikatów danego klienta są wiadomości.
-
-#### Odbiór wiadomości w sposób asynchroniczny
   Nie angażuje serwera. Sprawdza, czy w kolejce komunikatów danego klienta są wiadomości i odbiera wszystkie.
 
+#### Odbiór wiadomości w sposób asynchroniczny
+  Nie angażuje serwera. Tworzy proces potomny, który ciągle sprawdza, czy w kolejce komunikatów danego klienta są wiadomości.
+
 #### Odczyt tematów z serwera
+  `topic` – niewykorzystane<br>
+  `number` – niewykorzystane<br>
+  `text` – niewykorzystane
+
+  Serwer odsyła `<ilość tematów> + 1` wiadomości typu `text_msg`. W polu `text` znajduje się numer tematu i jego nazwa. Ostatnia wiadomość zawiera `""` i oznacza koniec listy tematów.
 
 #### Wyłączenie systemu
   Usuwa wszystkie kolejki klientów i kolejkę serwera, kończy program obsługujący serwer. (Uwaga: dane nie zostaną zapisane)

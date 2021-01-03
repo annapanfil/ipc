@@ -8,12 +8,8 @@
 //usuwanie wszystkich kolejek:
 // ipcs -q | tail -n +4 | tr -s " " | cut -d" " -f 2 | xargs -I\{\} ipcrm -q {}
 
-/*TODO:
-- nowa wiadomość:
-  usuwanie zerowych subskrybcji,
-  dodać "<temat>: " na początku wiadomości (sprintf?)
-  shutdown: wysłać wiadomość do wszystkich klientów
-- odczyt tematów (w tym zmiana sygnału wyłączenia)
+/*
+TODO: powtarzające się subskrybcje
 */
 
 #include <sys/types.h>
@@ -64,6 +60,7 @@ struct text_msg{
   char text[MESSAGE_LENGTH+NAME_LENGTH+2];
 };
 
+
 void send_feedback(int que, int type, int info){
   struct feedback feedback;
   feedback.type = type;
@@ -71,6 +68,17 @@ void send_feedback(int que, int type, int info){
 
   msgsnd(que, &feedback, sizeof(feedback)-sizeof(long), 0);
 }
+
+void print_subs(struct topic* topic){
+  struct sub* sub = topic -> first_sub;
+  printf("temat %s: ", topic->name);
+  while (sub != NULL){
+    printf("%d (%d) -> ", sub->client_que, sub->length);
+    sub = sub->next_sub;
+  }
+  printf("\n");
+}
+
 
 int login(struct msgbuf *message, struct client* clients, int* client_nr){
   printf("\e[0;36mⓘ Login\e[m\n");
@@ -98,26 +106,6 @@ int login(struct msgbuf *message, struct client* clients, int* client_nr){
   //UWAGA – teoretycznie 1 klient może się zalogować pod 2 różnymi nazwami – blokada po stronie klienta
 }
 
-void add_sub(struct msgbuf *message, struct topic* topics, int last_topic, struct client* clients){
-  printf("\e[0;36mⓘ Add_sub\e[m\n");
-  struct sub* new_sub;
-  new_sub = (struct sub*)malloc(sizeof(struct sub));
-  new_sub->client_que = (clients+message->id)->que;
-  new_sub->length = message->number;
-
-  if (message->topic > last_topic){
-    send_feedback(new_sub->client_que, 1, 1); //temat nie istnieje
-    return;
-  }
-
-  struct topic* topic = (topics + message->topic);
-
-  //wstawiamy na początek listy
-  new_sub->next_sub = topic->first_sub;
-  topic->first_sub = new_sub;
-
-  send_feedback(new_sub->client_que, 1, 0);
-}
 
 void add_topic(struct msgbuf *message, struct topic* topics, int* topic_nr, struct client* clients){
   printf("\e[0;36mⓘ Add topic\e[m\n");
@@ -137,16 +125,52 @@ void add_topic(struct msgbuf *message, struct topic* topics, int* topic_nr, stru
       }
     }
 
-    struct sub* sub;
-    sub = (struct sub*)malloc(sizeof(struct sub));
-    sub->next_sub = NULL;
-    topic.first_sub = sub;
+    topic.first_sub = NULL;
     *(topics+*topic_nr) = topic;
 
     printf("New topic: %s\n", topic.name);
     // printf("id: %d\nclient que: %d\n", message->id, (clients+message->id)->que);
     send_feedback((clients+message->id)->que, 1, 0); //wszystko OK
     *topic_nr = *topic_nr+1;
+  }
+}
+
+void add_sub(struct msgbuf *message, struct topic* topics, int last_topic, struct client* clients){
+  printf("\e[0;36mⓘ Add_sub\e[m\n");
+
+  print_subs(topics + message->topic);
+  struct sub* new_sub;
+  new_sub = (struct sub*)malloc(sizeof(struct sub));
+  new_sub->client_que = (clients+message->id)->que;
+  new_sub->length = message->number;
+
+  if (message->topic > last_topic){
+    send_feedback(new_sub->client_que, 1, 1); //temat nie istnieje
+    return;
+  }
+
+  struct topic* topic = (topics + message->topic);
+
+  //wstawiamy na początek listy
+  new_sub->next_sub = topic->first_sub;
+  topic->first_sub = new_sub;
+
+  print_subs(topics + message->topic);
+  send_feedback(new_sub->client_que, 1, 0);
+}
+
+void decrement_sub_length(struct sub* sub, struct sub* prev_sub, struct topic* topic){
+  if(sub->length != -1){
+    sub->length -= 1;
+    if (sub->length == 0){ // sub to remove
+      if (prev_sub != NULL){
+        prev_sub -> next_sub = sub -> next_sub;
+      }
+      else{ //it was first sub
+        topic -> first_sub = sub -> next_sub;
+      }
+      free(sub);
+    }
   }
 }
 
@@ -158,32 +182,27 @@ void send_msgs(struct msgbuf *msg_from_client, struct topic* topics, int last_to
     return;
   }
   else{
+    send_feedback((clients+msg_from_client->id)->que, 1, 0);  //OK
+
+    // print_subs(topics + (msg_from_client->topic));
     struct sub* sub = (topics + (msg_from_client->topic)) -> first_sub;
+    struct sub* prev_sub = NULL;
     struct text_msg msg;
     msg.type = 2;
-    strcpy(msg.text, msg_from_client->text);
-    send_feedback((clients+msg_from_client->id)->que, 1, 0);  //OK
-    //send messages
-    while (sub->next_sub != NULL){
-      printf("checking %d\n", sub->client_que);
+    sprintf(msg.text, "%s: %s", (topics + (msg_from_client->topic))->name, msg_from_client->text);
+
+    //send messages to all subscribents
+    while (sub != NULL){
       if (sub->client_que != (clients+msg_from_client->id)->que){ //nie odsyłaj do nadawcy
-        printf("sending to %d\n", sub->client_que);
         msgsnd(sub->client_que, &msg, sizeof(msg)-sizeof(long), 0);
-
-        //decrement subscription lenght
-        if(sub->length != -1){
-          sub->length -= 1;
-          // if (sub->length == 0){
-          // delete sub from list
-          //delete sub object
-          // }
-
-        }
+        decrement_sub_length(sub, prev_sub, topics + (msg_from_client->topic));
       }
-      printf("%d\n", sub->next_sub->client_que);
+
+      prev_sub = sub;
       sub = sub->next_sub;
     }
   }
+  // print_subs(topics + (msg_from_client->topic));
 }
 
 void send_topics(struct msgbuf *msg_from_client, struct topic* topics, int last_topic, struct client* clients){
@@ -212,10 +231,11 @@ void shutdown(int me, struct client* clients, int last_client){
   //Czy tu powinnam jeszcze zwolnić pamięć z list subskrybcji?
 }
 
+
 int main(int argc, char *argv[]) {
   //create server
   struct client clients[CLIENTS_NR];
-  struct topic topics[TOPICS_NR]; //linked list?
+  struct topic topics[TOPICS_NR];
   int next_client = 0;
   int next_topic = 0;
   struct msgbuf message;
