@@ -9,10 +9,10 @@
 - serwer powinien być uruchamiany jako pierwszy
 
 ## Struktura komunikatów
-#### Podstawowy komunikat
+#### Wiadomość od klienta
 
 ```c
-struct msgbuf{
+struct client_msgf{
   long type;
   int id;
   int topic;
@@ -26,30 +26,23 @@ struct msgbuf{
 - `topic` – numer tematu, którego dotyczy wiadomość
 - `number`, `tekst` – pola do użycia w zależności od typu komunikatu (opisane w poszczególnych scenariuszach komunikacji)
 
-#### Komunikat serwera informujący o stanie zakończenia operacji
-
-```c
-struct feedback{
-  long type;
-  int info;
-};
-```
-
-- `type` – 1 (lub numer kolejki klienta w przypadku logowania)
-- `info` – informacja zwrotna dla klienta
-
-#### Wiadomość tekstowa od serwera
+#### Wiadomość od serwera
 ```c
 struct text_msg{
   long type;
+  int info;
   char text[MESSAGE_LENGTH+NAME_LENGTH+2];
 };
 ```
 
-- `type` – 2 (wiadomość z subskrybowanego tematu) lub 3 (lista tematów na serwerze)
+- `type`
+  * 1-5 – wiadomość z subskrybowanego tematu o określonym priorytecie
+  * 6  – lista tematów na serwerze
+  * 7 – informacja zwrotna o stanie operacji
+  * <nr_kolejki_klienta> – informacja zwrotna do operacji logowania
 - `text` – treść wiadomości
 
-#### Typy podstawowych komunikatów
+#### Typy komunikatów od klienta
 1. logowanie
 1. nowy temat
 1. zapis na subskrybcję

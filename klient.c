@@ -9,15 +9,14 @@
 
 /*TODO:
 - spacje przy inpucie
-
-- priorytet wysyłanej wiadomości ? ("Proces wysyła treść rozgłaszanej wiadomości wraz z jej typem i priorytetem")
+- poprawność danych
 */
 
 #define NAME_LENGTH 30
 #define MESSAGE_LENGTH 1024
 #define SERVER_QUE_NR 12345
 
-struct msgbuf{
+struct client_msg{
   long type;
   int id;
   int topic;
@@ -25,19 +24,14 @@ struct msgbuf{
   char text[MESSAGE_LENGTH];
 };
 
-struct feedback{
+struct server_msg{
   long type;
   int info;
-};
-
-struct text_msg{
-  long type;
   char text[MESSAGE_LENGTH+NAME_LENGTH+2];
 };
 
-
 int take_feedback(int que, int type){
-  struct feedback feedback;
+  struct server_msg feedback;
   msgrcv(que, &feedback, sizeof(feedback)-sizeof(long), type, 0);
   // printf("Info: %d\n", feedback.info);
     return feedback.info;
@@ -53,7 +47,7 @@ void print_info(char text[100]){
 
 
 int login(int server, int* que, char name[NAME_LENGTH]){
-  struct msgbuf login_msg;
+  struct client_msg login_msg;
   int que_key = getpid();
   *que = msgget(que_key, 0644|IPC_CREAT);
   login_msg.type = 1;
@@ -64,7 +58,7 @@ int login(int server, int* que, char name[NAME_LENGTH]){
 }
 
 void register_topic(int server, int id, char topic_name[NAME_LENGTH]){
-  struct msgbuf topic_msg;
+  struct client_msg topic_msg;
   topic_msg.type = 2;
   topic_msg.id = id;
   strcpy(topic_msg.text, topic_name);
@@ -72,7 +66,7 @@ void register_topic(int server, int id, char topic_name[NAME_LENGTH]){
 }
 
 void register_sub(int server, int id, int topic, int sublen){ //-1 -> forever
-  struct msgbuf sub_msg;
+  struct client_msg sub_msg;
   sub_msg.type = 3;
   sub_msg.id = id;
   sub_msg.topic = topic;
@@ -80,22 +74,23 @@ void register_sub(int server, int id, int topic, int sublen){ //-1 -> forever
   msgsnd(server, &sub_msg, sizeof(sub_msg)-sizeof(long), 0);
 }
 
-void send_msg(int server, int id, int topic, char msg_text[MESSAGE_LENGTH]){
-  struct msgbuf message;
+void send_msg(int server, int id, int topic, char msg_text[MESSAGE_LENGTH], int priority){
+  struct client_msg message;
   message.type = 4;
   message.id = id;
   message.topic = topic;
+  message.number = priority;
   strcpy(message.text, msg_text);
   msgsnd(server, &message, sizeof(message)-sizeof(long), 0);
 }
 
 void receive_msg_async(int* pid, int que){
   if (*pid == -1){  //nie odbierał → zaczyna odbierać
-    struct text_msg message;
+    struct server_msg message;
     int x;
     if ((x=fork()) == 0){
       while (1) {
-        msgrcv(que, &message, sizeof(message)-sizeof(long), 2, 0);
+        msgrcv(que, &message, sizeof(message)-sizeof(long), -5, 0);
         printf("%s\n", message.text);
       }
     }
@@ -111,9 +106,9 @@ void receive_msg_async(int* pid, int que){
 
 void receive_msg_sync(int que){
   int size = 0;
-  struct text_msg message;
+  struct server_msg message;
   while (size != -1){
-    size = msgrcv(que, &message, sizeof(message)-sizeof(long), 2, IPC_NOWAIT);
+    size = msgrcv(que, &message, sizeof(message)-sizeof(long), -5, IPC_NOWAIT);
     if (size != -1){
       printf("%s\n", message.text);
     }
@@ -123,23 +118,24 @@ void receive_msg_sync(int que){
 
 int get_topics(int server, int id, int que){
   int nr_of_topics = 0;
-  struct msgbuf msg;
+  struct client_msg msg;
   msg.type = 5;
   msg.id = id;
   msgsnd(server, &msg, sizeof(msg)-sizeof(long), 0);
 
-  struct text_msg message;
+  struct server_msg message;
   printf("\n-------TEMATY NA SERWERZE-------\n");
   do{
-    msgrcv(que, &message, sizeof(message)-sizeof(long), 3, 0);
+    msgrcv(que, &message, sizeof(message)-sizeof(long), 6, 0);
     printf("%s\n", message.text);
     nr_of_topics++;
   }while (strcmp(message.text, "") != 0);
-  return nr_of_topics;
+  printf("number of topics: %d\n", nr_of_topics-1);
+  return nr_of_topics-1;
 }
 
 void shutdown(int server){
-  struct msgbuf message;
+  struct client_msg message;
   message.type = 6;
   msgsnd(server, &message, sizeof(message)-sizeof(long), 0);
 }
@@ -178,7 +174,7 @@ void topic_menu(int server, int id, int que){
 
     register_topic(server, id, topic);
 
-    int feedback = take_feedback(que, 1);
+    int feedback = take_feedback(que, 7);
     if (feedback == 1){
       print_error("Taki temat już istnieje.");
     }
@@ -210,18 +206,19 @@ void sub_menu(int server, int id, int que){
 
     register_sub(server, id, topic, length);
 
-    int feedback = take_feedback(que, 1);
+    int feedback = take_feedback(que, 7);
     if (feedback == 1){
       print_error("Taki temat nie istnieje.");
     }
     else if(feedback == 0)
-      print_info("Dodano subkrybcję");
+      print_info("Dodano subkrybcję\n");
 }
 
 void msg_menu(int server, int id, int que){
     char msg[MESSAGE_LENGTH] = "Empty message";
     int topic;
     int nr_of_topics = get_topics(server, id, que);
+    int priority;
     char choice = 'y';
     do{
       choice = 'y';
@@ -234,14 +231,17 @@ void msg_menu(int server, int id, int que){
     }while(choice != 'y');
     print_info("Wpisz treść wiadomości: \n> "); //nie może zawierać spacji
     scanf("%s", msg);
-    send_msg(server, id, topic, msg);
+    print_info("Priorytet wiadomości (1-5, gdzie 1 – najwyższy): ");
+    scanf("%d", &priority);
 
-    int feedback = take_feedback(que, 1);
+    send_msg(server, id, topic, msg, priority);
+
+    int feedback = take_feedback(que, 7);
     if (feedback == 1){
       print_error("Taki temat nie istnieje.");
     }
     else if (feedback == 0)
-      print_info("Wiadomość wysłana");
+      print_info("Wiadomość wysłana\n");
 }
 
 
@@ -254,20 +254,20 @@ int main(int argc, char *argv[]) {
   int nr_on_server = login_menu(server, &que);
   // printf("%d %d\n", que, nr_on_server);
   // register_topic(server, nr_on_server, "sport");
-  // take_feedback(que, 1);
+  // take_feedback(que, 7);
   // register_sub(server, nr_on_server, 0, -1);
-  // take_feedback(que, 1);
+  // take_feedback(que, 7);
   // int nr_of_topics = get_topics(server, nr_on_server, que);
 
   do{
-    print_info("\n------------MENU------------------\n1 – utwórz nowy temat\n2 – zapisz się na subskrybcję\n3 – nowa wiadomość\n4 – odbierz wiadomości\n5 – włącz/wyłącz asynchroniczne odbieranie wiadomości\n6 – wyślwietl listę tematów na serwerze\n7 – wyłącz system\n8 – zakończ\n");
+    print_info("\n------------MENU------------------\n1 – utwórz nowy temat\n2 – zapisz się na subskrybcję\n3 – nowa wiadomość\n4 – odbierz wiadomości\n5 – włącz/wyłącz asynchroniczne odbieranie wiadomości\n6 – wyświetl listę tematów na serwerze\n7 – wyłącz system\n8 – zakończ\n");
     while ((choice = getchar())<=' ');
     switch (choice) {
       case '1': topic_menu(server, nr_on_server, que); break;
       case '2': sub_menu(server, nr_on_server, que); break;
       case '3': msg_menu(server, nr_on_server, que); break;
-      case '4': receive_msg_sync(&child_pid, que);  break;
-      case '5': receive_msg_async(que); break;
+      case '4': receive_msg_sync(que);  break;
+      case '5': receive_msg_async(&child_pid, que); break;
       case '6': get_topics(server, nr_on_server, que); break; //TODO: delete
       case '7': shutdown(server); break;
       case '8': break;
