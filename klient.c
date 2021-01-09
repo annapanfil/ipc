@@ -45,6 +45,53 @@ void print_info(char text[100]){
   printf("\e[1;34m%s\e[m", text);
 }
 
+int get_int_from_user(){
+  char text[10];
+  int number;
+  while(1){
+    // scanf("%*[^\n]");scanf("%*c"); //clean buffer
+    if(fgets(text, sizeof(text), stdin)){
+      if(sscanf(text, "%d", &number) == 1){
+        // printf("odczytano liczbę %d\n", number);
+        return number;
+      }
+      else
+        print_error("Podany tekst nie jest liczbą. Spróbuj jeszcze raz: ");
+    }
+  }
+}
+
+char* get_string_from_user(int length){
+  char* text = malloc(length);
+  fgets(text, length, stdin);
+  if ((strlen(text) > 0) && (text[strlen(text) - 1] == '\n')) //remove newline
+        text[strlen(text) - 1] = '\0';
+  // printf("odczytano tekst: %s\n", text);
+  // scanf("%*[^\n]");scanf("%*c"); //clean buffer
+  return text;
+}
+
+
+int choose_topic(int nr_of_topics){
+  char choice;
+  int topic;
+  do{
+    choice = 'y';
+    print_info("Podaj numer tematu: ");
+    topic = get_int_from_user();
+    if (topic>=nr_of_topics){
+      print_info("Tego tematu nie ma na liście. Czy mimo to chcesz go wybrać? y/n ");
+      while ((choice = getchar())<=' ');
+      getchar(); //clean enter from buffer
+    }
+    else if (topic < 0){
+      print_error("Temat nie może być liczbą ujemną. Kochany użytkowniku, wybierz temat, który jest na liście.");
+    }
+
+  }while(choice != 'y');
+
+  return topic;
+}
 
 int login(int server, int* que, char name[NAME_LENGTH]){
   struct client_msg login_msg;
@@ -147,7 +194,11 @@ int login_menu(int server, int* que){
     //login
     char name[NAME_LENGTH] = "Obi wan";
     print_info("Dzień dobry! Podaj swoją nazwę użytkownika: ");
-    scanf("%s", name); //nie może zawierać spacji
+    // fgets(name, NAME_LENGTH, stdin);
+    strcpy(name, get_string_from_user(NAME_LENGTH));
+    // if ((strlen(name) > 0) && (name[strlen(name) - 1] == '\n')) //remove newline
+    //       name[strlen(name) - 1] = '\0';
+
     int que_key = login(server, que, name);
     nr_on_server = take_feedback(server, que_key);
     if (nr_on_server == -1){
@@ -170,13 +221,14 @@ void topic_menu(int server, int id, int que){
     get_topics(server, id, que);
 
     print_info("Podaj nazwę nowego tematu: "); //nie może zawierać spacji
-    scanf("%s", topic);
+    // while (getchar()<=' ');
+    strcpy(topic, get_string_from_user(NAME_LENGTH));
 
     register_topic(server, id, topic);
 
     int feedback = take_feedback(que, 7);
     if (feedback == 1){
-      print_error("Taki temat już istnieje.");
+      printf("Taki temat już istnieje. %s.", topic);
     }
     else if(feedback == 2){
       print_error("Na tym serwerze jest zbyt wiele tematów. Nie możesz dodać kolejnego.");
@@ -186,23 +238,17 @@ void topic_menu(int server, int id, int que){
 }
 
 void sub_menu(int server, int id, int que){
-    int topic;
     int length;
-    char choice = 'y';
 
     int nr_of_topics = get_topics(server, id, que);
+    int topic = choose_topic(nr_of_topics);
 
-    do{
-      choice = 'y';
-      print_info("Podaj numer tematu, który chcesz subskrybować: ");
-      scanf("%d", &topic);
-      if (topic>=nr_of_topics){
-        print_info("Tego tematu nie ma na liście. Czy mimo to chcesz go wybrać? y/n");
-        while ((choice = getchar())<=' ');
-      }
-    }while(choice != 'y');
     print_info("Ile wiadomości z tego tematu chcesz otrzymać? (-1 → wszystkie): ");
-    scanf("%d", &length);
+    length = get_int_from_user();
+    while (length<-1 || length == 0) {
+      print_error("Priorytet musi być liczbą całkowitą ≥ -1 i ≠ 0. Spróbuj jeszcze raz: ");
+      length = get_int_from_user();
+    }
 
     register_sub(server, id, topic, length);
 
@@ -216,23 +262,20 @@ void sub_menu(int server, int id, int que){
 
 void msg_menu(int server, int id, int que){
     char msg[MESSAGE_LENGTH] = "Empty message";
-    int topic;
-    int nr_of_topics = get_topics(server, id, que);
     int priority;
-    char choice = 'y';
-    do{
-      choice = 'y';
-      print_info("Podaj numer tematu: ");
-      scanf("%d", &topic);
-      if (topic>=nr_of_topics){
-        print_info("Tego tematu nie ma na liście. Czy mimo to chcesz go wybrać? y/n");
-        while ((choice = getchar())<=' ');
-      }
-    }while(choice != 'y');
-    print_info("Wpisz treść wiadomości: \n> "); //nie może zawierać spacji
-    scanf("%s", msg);
+
+    int nr_of_topics = get_topics(server, id, que);
+    int topic = choose_topic(nr_of_topics);
+
+    print_info("Wpisz treść wiadomości: \n> ");
+    strcpy(msg, get_string_from_user(MESSAGE_LENGTH));
+
     print_info("Priorytet wiadomości (1-5, gdzie 1 – najwyższy): ");
-    scanf("%d", &priority);
+    priority = get_int_from_user();
+    while (priority < 1 || priority > 5) {
+      print_error("Priorytet musi być równy 1, 2, 3, 4 lub 5. Spróbuj jeszcze raz: ");
+      priority = get_int_from_user();
+    }
 
     send_msg(server, id, topic, msg, priority);
 
@@ -262,6 +305,7 @@ int main(int argc, char *argv[]) {
   do{
     print_info("\n------------MENU------------------\n1 – utwórz nowy temat\n2 – zapisz się na subskrybcję\n3 – nowa wiadomość\n4 – odbierz wiadomości\n5 – włącz/wyłącz asynchroniczne odbieranie wiadomości\n6 – wyświetl listę tematów na serwerze\n7 – wyłącz system\n8 – zakończ\n");
     while ((choice = getchar())<=' ');
+    getchar(); //clean enter from buffer
     switch (choice) {
       case '1': topic_menu(server, nr_on_server, que); break;
       case '2': sub_menu(server, nr_on_server, que); break;
