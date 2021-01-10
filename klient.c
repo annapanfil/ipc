@@ -12,6 +12,8 @@
 
 /*TODO:
 old - przy priorytecie działa "1,2,3lub4"
+- czyszczenie okna przy błędach
+- kolory
 */
 
 #define NAME_LENGTH 30
@@ -67,16 +69,16 @@ void print_success(WINDOW* window, char text[TEXT_LEN]){
   attroff(COLOR_PAIR(3));
 }
 
-void print_long(char type, char text1[TEXT_LEN], char text2[NAME_LENGTH]){
-  /*char* text = malloc(TEXT_LEN+NAME_LENGTH);
+void print_long(WINDOW* window, char type, char text1[TEXT_LEN], char text2[NAME_LENGTH]){
+  char* text = malloc(TEXT_LEN+NAME_LENGTH);
   sprintf(text, "%s %s", text1, text2);
   switch (type) {
-    case 'i': print_info(text); break;
-    case 'e': print_error(text); break;
-    case 's': print_success(text); break;
-    default: print_error("To developer: wrong type in print_long");
+    case 'i': print_info(window, text); break;
+    case 'e': print_error(window, text); break;
+    case 's': print_success(window, text); break;
+    default: print_error(window, "To developer: wrong type in print_long");
   }
-  free(text);*/
+  free(text);
 }
 
 
@@ -88,8 +90,8 @@ int get_int_from_user(WINDOW* window){
     if(sscanf(text, "%d", &number) == 1){
       return number;
       }
-    // else
-      // print_error("Podany tekst nie jest liczbą. Spróbuj jeszcze raz: ");
+    else
+      print_error(window, "Podany tekst nie jest liczbą. Spróbuj jeszcze raz: ");
     }
   }
 
@@ -192,31 +194,16 @@ void shutdown(int server){
   msgsnd(server, &message, sizeof(message)-sizeof(long), 0);
 }
 
-
-WINDOW* create_window(char* name, int height, int width, int y, int x){
-  WINDOW* window = newwin(height, width, y, x);
-  box(window, 0, 0);
-  mvwprintw(window, 0, 2, name);
-  wmove(window, 1, 0);
-  refresh();
-  wrefresh(window);
-
-  return window;
-}
-
 void close_window(WINDOW* window){
   print_info(window, "Naciśnij dowolny klawisz, by przejść do menu");
   wgetch(window);
 
   wclear(window);
   wrefresh(window);
-  delwin(window);
 }
 
-int gui_menu(char options[][TEXT_LEN], int options_nr){
-  int terminal_width, terminal_height;
-  getmaxyx (stdscr, terminal_height, terminal_width);
-  WINDOW* menu_win = create_window("", 15, terminal_width-8, terminal_height-15, 4);
+int gui_menu(WINDOW* menu_win, char options[][TEXT_LEN], int options_nr){
+  box(menu_win, 0, 0);
   noecho();
   keypad(menu_win, true);  //allows to use arrows
 
@@ -248,15 +235,18 @@ int gui_menu(char options[][TEXT_LEN], int options_nr){
 
   wclear(menu_win);
   wrefresh(menu_win); // Refresh it (to leave it blank)
-
-  delwin(menu_win);
   echo();
   return highlight;
 }
 
 int login_menu(int server, int* que){
   int terminal_width = getmaxx (stdscr);
-  WINDOW* login_win = create_window("LOGIN", 15, terminal_width-16, 8, 8);
+  WINDOW* login_win = newwin(15, terminal_width-16, 8, 8);
+  box(login_win, 0, 0);
+  mvwprintw(login_win, 0, 2, "LOGOWANIE");
+  wmove(login_win, 1, 0);
+  refresh();
+  wrefresh(login_win);
 
   int nr_on_server = -1;
   char name[NAME_LENGTH] = "Obi wan";
@@ -283,34 +273,38 @@ int login_menu(int server, int* que){
   return nr_on_server;
 }
 
-void topic_menu(int server, int id, int que){
-    /*print_info("\n\r-----------NOWY TEMAT-----------\n\r");
+void topic_menu(WINDOW* window, int server, int id, int que){
+    box(window, 0, 0);
+    mvwprintw(window, 0, 2, "NOWY TEMAT");
+    wmove(window, 1, 0);
     char topic[NAME_LENGTH] = "New topic";
 
     char topics[TEXT_LEN][TEXT_LEN];
     int topics_nr =get_topics(server, id, que, topics);
-    print_info("\n-------TEMATY NA SERWERZE-------\n\r");
-    for (int i=0; i<topics_nr; i++)
-      print_long('i', topics[i], "\n");
+    if(topics_nr > 0){
+      print_info(window, "TEMATY NA SERWERZE:\n\r");
+      for (int i=0; i<topics_nr; i++)
+      print_long(window, 'i', topics[i], "\n");
+    }
+    else
+      print_info(window, "Na tym serwerze nie ma jeszcze żadnych tematów.");
 
-    print_info("Podaj nazwę nowego tematu: "); //nie może zawierać spacji
-    strcpy(topic, get_string_from_user(NAME_LENGTH));
+    print_info(window,"Podaj nazwę nowego tematu: ");
+    strcpy(topic, get_string_from_user(window, NAME_LENGTH));
 
     register_topic(server, id, topic);
 
     int feedback = take_feedback(que, 7);
     if (feedback == 1){
-      print_error("Taki temat już istnieje");
+      print_error(window, "Taki temat już istnieje");
     }
     else if(feedback == 2){
-      print_error("Na tym serwerze jest zbyt wiele tematów. Nie możesz dodać kolejnego.");
+      print_error(window, "Na tym serwerze jest zbyt wiele tematów. Nie możesz dodać kolejnego.");
     }
     else if(feedback == 0)
-      print_success("Dodano temat");
+      print_success(window, "Dodano temat");
 
-    print_info("Naciśnij dowolny klawisz, by wrócić do menu.\n\r");
-    getch();
-    clear();*/
+    close_window(window);
 }
 
 void sub_menu(int server, int id, int que){
@@ -387,8 +381,11 @@ int main(int argc, char *argv[]) {
   //initialise ncurses
   setlocale(LC_ALL, "pl_PL.UTF-8");
   initscr();
-  int terminal_width = getmaxx (stdscr);
   echo();
+  int terminal_width, terminal_height;
+  getmaxyx (stdscr, terminal_height, terminal_width);
+
+  WINDOW* left_win = newwin(terminal_height-8, round(2*terminal_width/3)-8, 4, 4);
 
   start_color();
   use_default_colors();
@@ -406,10 +403,10 @@ int main(int argc, char *argv[]) {
   char menu[7][TEXT_LEN] = {"nowy temat", "zapis na subskrybcję", "nowa wiadomość", "odbierz wiadomości", "włącz/wyłącz automatyczne odbieranie wiadomości", "wyłącz system", "zakończ"};
 
   do{
-    choice = gui_menu(menu, 7);
+    choice = gui_menu(left_win, menu, 7);
 
     switch (choice) {
-      case 0: topic_menu(server, nr_on_server, que); break;
+      case 0: topic_menu(left_win, server, nr_on_server, que); break;
       case 1: sub_menu(server, nr_on_server, que); break;
       case 2: msg_menu(server, nr_on_server, que); break;
       case 3: receive_msg_sync(que);  break;
@@ -426,8 +423,9 @@ int main(int argc, char *argv[]) {
   move(15, round(terminal_width/2)-6);
   // print_info("Do widzenia!\n");
   refresh();
-  getchar();
+  // getchar();
   use_default_colors();
+  delwin(left_win);
   endwin();
   return 0;
 }
