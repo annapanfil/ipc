@@ -6,9 +6,11 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <signal.h> //kill
+#include <locale.h>
+#include <ncursesw/ncurses.h>
 
 /*TODO:
-- przy priorytecie działa "1,2,3lub4"
+old - przy priorytecie działa "1,2,3lub4"
 */
 
 #define NAME_LENGTH 30
@@ -32,20 +34,42 @@ struct server_msg{
 int take_feedback(int que, int type){
   struct server_msg feedback;
   msgrcv(que, &feedback, sizeof(feedback)-sizeof(long), type, 0);
-  // printf("Info: %d\n", feedback.info);
     return feedback.info;
 }
 
+
+
 void print_error(char text[100]){
-  printf("\e[0;31m%s\n\e[m", text);
+  attron(COLOR_PAIR(2));
+  printw("%s\n\r", text);
+  refresh();
+  attroff(COLOR_PAIR(2));
 }
 
 void print_info(char text[100]){
-  printf("\e[1;34m%s\e[m", text);
+  attron(COLOR_PAIR(1));
+  printw("%s", text);
+  refresh();
+  attroff(COLOR_PAIR(1));
 }
 
 void print_success(char text[100]){
-  printf("\e[1;32m%s\e[m\n", text);
+  attron(COLOR_PAIR(3));
+  printw("%s\n\r", text);
+  refresh();
+  attroff(COLOR_PAIR(3));
+}
+
+void print_long(char type, char text1[100], char text2[NAME_LENGTH]){
+  char* text = malloc(100+NAME_LENGTH);
+  sprintf(text, "%s %s", text1, text2);
+  switch (type) {
+    case 'i': print_info(text); break;
+    case 'e': print_error(text); break;
+    case 's': print_success(text); break;
+    default: print_error("To developer: wrong type in print_long");
+  }
+  free(text);
 }
 
 
@@ -53,29 +77,18 @@ int get_int_from_user(){
   char text[10];
   int number;
   while(1){
-    if(fgets(text, sizeof(text), stdin)){
-      if (!(text[strlen(text) - 1] == '\n')){
-        scanf("%*[^\n]");scanf("%*c"); //clean buffer
-        print_error("Podana liczba jest zbyt długa. Spróbuj jeszcze raz: ");
+    getnstr(text, sizeof(text));  //zabezbieczyć długość
+    if(sscanf(text, "%d", &number) == 1){
+      return number;
       }
-      else if(sscanf(text, "%d", &number) == 1){
-        return number;
-      }
-      else
-        print_error("Podany tekst nie jest liczbą. Spróbuj jeszcze raz: ");
+    else
+      print_error("Podany tekst nie jest liczbą. Spróbuj jeszcze raz: ");
     }
   }
-}
 
 char* get_string_from_user(int length){
   char* text = malloc(length);
-  fgets(text, length, stdin);
-  if ((strlen(text) > 0) && (text[strlen(text) - 1] == '\n'))
-    text[strlen(text) - 1] = '\0'; //remove newline
-  else if (!(text[strlen(text) - 1] == '\n')){
-    printf("\e[0;31mTekst został skrócony do: %s\e[m\n", text);
-    scanf("%*[^\n]");scanf("%*c"); //clean buffer
-  }
+  getnstr(text, length);
   return text;
 }
 
@@ -89,13 +102,13 @@ int choose_topic(int nr_of_topics){
     topic = get_int_from_user();
     if (topic>=nr_of_topics){
       print_info("Tego tematu nie ma na liście. Czy mimo to chcesz go wybrać? y/n ");
-      while ((choice = getchar())<=' ');
-      scanf("%*[^\n]");scanf("%*c"); //clean buffer
+      while ((choice = getch())<=' ');
+      print_info("\n");
     }
     else if (topic < 0){
-      print_error("Temat nie może być liczbą ujemną. Kochany użytkowniku, wybierz temat, który jest na liście.");
+      print_error("Temat nie może być liczbą ujemną. Wybierz temat, który jest na liście.");
+      choice = 'n';
     }
-
   }while(choice != 'y');
 
   return topic;
@@ -146,7 +159,7 @@ void receive_msg_async(int* pid, int que){
     if ((x=fork()) == 0){
       while (1) {
         msgrcv(que, &message, sizeof(message)-sizeof(long), -5, 0);
-        printf("%s\n", message.text);
+        printw("%s\r\n", message.text);
       }
     }
     *pid = x;
@@ -155,7 +168,7 @@ void receive_msg_async(int* pid, int que){
   else{  //odbierał → kończy odbieranie
     kill(*pid, 15);
     *pid = -1;
-      print_success("Wyłączono synchroniczne odbieranie wiadomości");
+    print_success("Wyłączono synchroniczne odbieranie wiadomości");
   }
 }
 
@@ -165,7 +178,7 @@ void receive_msg_sync(int que){
   while (size != -1){
     size = msgrcv(que, &message, sizeof(message)-sizeof(long), -5, IPC_NOWAIT);
     if (size != -1){
-      printf("%s\n", message.text);
+      printw("%s\r\n", message.text);
     }
   }
   print_success("Nie masz więcej nowych wiadomości.");
@@ -179,10 +192,10 @@ int get_topics(int server, int id, int que){
   msgsnd(server, &msg, sizeof(msg)-sizeof(long), 0);
 
   struct server_msg message;
-  printf("\n-------TEMATY NA SERWERZE-------\n");
+  print_info("\n-------TEMATY NA SERWERZE-------\n\r");
   do{
     msgrcv(que, &message, sizeof(message)-sizeof(long), 6, 0);
-    printf("%s\n", message.text);
+    print_long('i', message.text, "\n\r");
     nr_of_topics++;
   }while (strcmp(message.text, "") != 0);
   return nr_of_topics-1;
@@ -215,11 +228,13 @@ int login_menu(int server, int* que){
     else if(nr_on_server >= 0)
       print_success("Zalogowano");
   }
+  print_info("Naciśnij dowolny klawisz, by przejść do menu");
+  clear();
   return nr_on_server;
 }
 
 void topic_menu(int server, int id, int que){
-    print_info("\n-----------NOWY TEMAT-----------\n");
+    print_info("\n\r-----------NOWY TEMAT-----------\n\r");
     char topic[NAME_LENGTH] = "New topic";
 
     get_topics(server, id, que);
@@ -231,17 +246,21 @@ void topic_menu(int server, int id, int que){
 
     int feedback = take_feedback(que, 7);
     if (feedback == 1){
-      printf("Taki temat już istnieje. %s.", topic);
+      print_error("Taki temat już istnieje");
     }
     else if(feedback == 2){
       print_error("Na tym serwerze jest zbyt wiele tematów. Nie możesz dodać kolejnego.");
     }
     else if(feedback == 0)
       print_success("Dodano temat");
+
+    print_info("Naciśnij dowolny klawisz, by wrócić do menu.\n\r");
+    getch();
+    clear();
 }
 
 void sub_menu(int server, int id, int que){
-    print_info("\n-----------NOWA SUBSKRYBCJA-----------\n");
+    print_info("\n\r-----------NOWA SUBSKRYBCJA-----------\n\r");
     int length;
 
     int nr_of_topics = get_topics(server, id, que);
@@ -262,17 +281,20 @@ void sub_menu(int server, int id, int que){
     }
     else if(feedback == 0)
       print_success("Dodano subkrybcję");
+
+    print_info("Naciśnij dowolny klawisz, by wrócić do menu.\n\r");
+    getch();
 }
 
 void msg_menu(int server, int id, int que){
-    print_info("\n-----------NOWA WIADOMOŚĆ-----------\n");
+    print_info("\n\r-----------NOWA WIADOMOŚĆ-----------\n\r");
     char msg[MESSAGE_LENGTH] = "Empty message";
     int priority;
 
     int nr_of_topics = get_topics(server, id, que);
     int topic = choose_topic(nr_of_topics);
 
-    print_info("Wpisz treść wiadomości: \n> ");
+    print_info("Wpisz treść wiadomości: \n\r> ");
     strcpy(msg, get_string_from_user(MESSAGE_LENGTH));
 
     print_info("Priorytet wiadomości (1-5, gdzie 1 – najwyższy): ");
@@ -290,36 +312,60 @@ void msg_menu(int server, int id, int que){
     }
     else if (feedback == 0)
       print_success("Wiadomość wysłana");
+
+    print_info("Naciśnij dowolny klawisz, by wrócić do menu.\n\r");
+    getch();
 }
 
-
 int main(int argc, char *argv[]) {
+  setlocale(LC_ALL, "pl_PL.UTF-8");
+  initscr();
+  echo();
+  if (has_colors() == FALSE) {
+    endwin();
+    printf("Your terminal does not support color\n");
+    exit(1);
+  }
+  else{
+    start_color();
+    use_default_colors();
+    init_pair(1, COLOR_YELLOW, -1); //for info
+    init_pair(2, COLOR_RED, -1); //for error
+    init_pair(3, COLOR_GREEN, -1); //for success
+  }
+
   int server = msgget(SERVER_QUE_NR, 0);
   int que = 0;
   int choice = ' ';
   int child_pid = -1;
 
+
+
   int nr_on_server = login_menu(server, &que);
 
   do{
-    print_info("\n------------MENU------------------\n1 – utwórz nowy temat\n2 – zapisz się na subskrybcję\n3 – nowa wiadomość\n4 – odbierz wiadomości\n5 – włącz/wyłącz asynchroniczne odbieranie wiadomości\n6 – wyświetl listę tematów na serwerze\n7 – wyłącz system\n8 – zakończ\n\nPodaj numer i naciśnij enter: ");
-    while ((choice = getchar())<=' ');
-    scanf("%*[^\n]");scanf("%*c"); //clean buffer
+    print_info("\n\r------------MENU------------------\n1 – utwórz nowy temat\n2 – zapisz się na subskrybcję\n3 – nowa wiadomość\n4 – odbierz wiadomości\n5 – włącz/wyłącz asynchroniczne odbieranie wiadomości\n6 – wyłącz system\n7 – zakończ\n\nPodaj numer i naciśnij enter: ");
+    while ((choice = getch())<=' ');
+    clear();
     switch (choice) {
       case '1': topic_menu(server, nr_on_server, que); break;
       case '2': sub_menu(server, nr_on_server, que); break;
       case '3': msg_menu(server, nr_on_server, que); break;
       case '4': receive_msg_sync(que);  break;
       case '5': receive_msg_async(&child_pid, que); break;
-      case '6': get_topics(server, nr_on_server, que); break; //TODO: delete
-      case '7': shutdown(server); break;
-      case '8': break;
-      default: printf("\e[0;31mNiepoprawny numer '%c'.\n\e[m", choice);
+      case '6': shutdown(server); break;
+      case '7': break;
+      default: print_error("Niepoprawny wybór");
     }
-  }while(choice != '7' && choice != '8');
+  }while(choice != '6' && choice != '7');
 
   if (child_pid != -1)
     kill(child_pid, 15);
-  print_info("Bywaj!\n");
+  move(15, 30);
+  print_info("Do widzenia!\n");
+  refresh();
+  getchar();
+  use_default_colors();
+  endwin();
   return 0;
 }
