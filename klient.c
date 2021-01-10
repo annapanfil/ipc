@@ -14,6 +14,7 @@
 old - przy priorytecie działa "1,2,3lub4"
 - czyszczenie okna przy błędach
 - kolory
+- brak enterów przy błędach? (p. sub menu <-1)
 */
 
 #define NAME_LENGTH 30
@@ -150,12 +151,12 @@ void receive_msg_async(int* pid, int que){
       }
     }
     *pid = x;
-    // print_success("Włączono synchroniczne odbieranie wiadomości");
+    // print_success(window, "Włączono synchroniczne odbieranie wiadomości");
   }
   else{  //odbierał → kończy odbieranie
     kill(*pid, 15);
     *pid = -1;
-    // print_success("Wyłączono synchroniczne odbieranie wiadomości");
+    // print_success(window, "Wyłączono synchroniczne odbieranie wiadomości");
   }
 }
 
@@ -168,7 +169,7 @@ void receive_msg_sync(int que){
       printw("%s\r\n", message.text);
     }
   }
-  // print_success("Nie masz więcej nowych wiadomości.");
+  // print_success(window, "Nie masz więcej nowych wiadomości.");
 }
 
 int get_topics(int server, int id, int que, char topics[][TEXT_LEN]){
@@ -307,41 +308,43 @@ void topic_menu(WINDOW* window, int server, int id, int que){
     close_window(window);
 }
 
-void sub_menu(int server, int id, int que){
-  /*  print_info("\n\r-----------NOWA SUBSKRYBCJA-----------\n\r");
+void sub_menu(WINDOW* window, int server, int id, int que){
+    box(window, 0, 0);
+    mvwprintw(window, 0, 2, "NOWA SUBSKRYBCJA");
+    wmove(window, 1, 0);
     int length;
 
     char topics[TEXT_LEN][TEXT_LEN];
     int nr_of_topics = get_topics(server, id, que, topics);
     if (nr_of_topics > 0){
-      int topic = gui_menu(topics, nr_of_topics);
-
-
-      print_info("Ile wiadomości z tego tematu chcesz otrzymać? (-1 → wszystkie): ");
-      length = get_int_from_user();
+      int topic = gui_menu(window, topics, nr_of_topics);
+      box(window, 0, 0);
+      mvwprintw(window, 0, 2, "NOWA SUBSKRYBCJA");
+      wmove(window, 1, 0);
+      print_info(window, "Ile wiadomości z tego tematu chcesz otrzymać? (-1 → wszystkie): ");
+      length = get_int_from_user(window);
       while (length<-1 || length == 0) {
-        print_error("Priorytet musi być liczbą całkowitą ≥ -1 i ≠ 0. Spróbuj jeszcze raz: ");
-        length = get_int_from_user();
+        print_error(window, "Priorytet musi być liczbą całkowitą ≥ -1 i ≠ 0. Spróbuj jeszcze raz: ");
+        length = get_int_from_user(window);
       }
 
       register_sub(server, id, topic, length);
 
       int feedback = take_feedback(que, 7);
-      if (feedback == 1){
-        print_error("Taki temat już nie istnieje.");
+      if (feedback == 1){     //shouldn't happen
+        print_error(window, "Taki temat już nie istnieje.");
       }
       else if(feedback == 0)
-        print_success("Dodano subkrybcję");
+        print_success(window, "Dodano subkrybcję");
     }
     else
-      print_info("Na tym serwerze nie ma żadnego tematu\n");
+      print_info(window, "Na tym serwerze nie ma żadnego tematu\n");
 
-    print_info("Naciśnij dowolny klawisz, by wrócić do menu.\n\r");
-    getch();*/
+    close_window(window);
 }
 
 void msg_menu(int server, int id, int que){
-  /*  print_info("\n\r-----------NOWA WIADOMOŚĆ-----------\n\r");
+  /*  print_info(window, "\n\r-----------NOWA WIADOMOŚĆ-----------\n\r");
     char msg[MESSAGE_LENGTH] = "Empty message";
     int priority;
 
@@ -350,13 +353,13 @@ void msg_menu(int server, int id, int que){
     if (nr_of_topics > 0){
       int topic = gui_menu(topics, nr_of_topics);
 
-    print_info("Wpisz treść wiadomości: \n\r> ");
+    print_info(window, "Wpisz treść wiadomości: \n\r> ");
     strcpy(msg, get_string_from_user(MESSAGE_LENGTH));
 
-    print_info("Priorytet wiadomości (1-5, gdzie 1 – najwyższy): ");
+    print_info(window, "Priorytet wiadomości (1-5, gdzie 1 – najwyższy): ");
     priority = get_int_from_user();
     while (priority < 1 || priority > 5) {
-      print_error("Priorytet musi być równy 1, 2, 3, 4 lub 5. Spróbuj jeszcze raz: ");
+      print_error(window, "Priorytet musi być równy 1, 2, 3, 4 lub 5. Spróbuj jeszcze raz: ");
       priority = get_int_from_user();
     }
 
@@ -364,15 +367,15 @@ void msg_menu(int server, int id, int que){
 
     int feedback = take_feedback(que, 7);
     if (feedback == 1){
-      print_error("Taki temat nie istnieje.");
+      print_error(window, "Taki temat nie istnieje.");
     }
     else if (feedback == 0)
-      print_success("Wiadomość wysłana");
+      print_success(window, "Wiadomość wysłana");
     }
     else
-      print_info("Na tym serwerze nie ma żadnego tematu.\n");
+      print_info(window, "Na tym serwerze nie ma żadnego tematu.\n");
 
-    print_info("Naciśnij dowolny klawisz, by wrócić do menu.\n\r");
+    print_info(window, "Naciśnij dowolny klawisz, by wrócić do menu.\n\r");
     getch();*/
 }
 
@@ -407,13 +410,13 @@ int main(int argc, char *argv[]) {
 
     switch (choice) {
       case 0: topic_menu(left_win, server, nr_on_server, que); break;
-      case 1: sub_menu(server, nr_on_server, que); break;
+      case 1: sub_menu(left_win, server, nr_on_server, que); break;
       case 2: msg_menu(server, nr_on_server, que); break;
       case 3: receive_msg_sync(que);  break;
       case 4: receive_msg_async(&child_pid, que); break;
       case 5: shutdown(server); break;
       case 6: break;
-      // default: print_error("Niepoprawny wybór"); //shouldn't happen
+      // default: print_error(window, "Niepoprawny wybór"); //shouldn't happen
     }
   }while(choice != 5 && choice != 6);
 
@@ -421,7 +424,7 @@ int main(int argc, char *argv[]) {
   if (child_pid != -1)
     kill(child_pid, 15);
   move(15, round(terminal_width/2)-6);
-  // print_info("Do widzenia!\n");
+  // print_info(window, "Do widzenia!\n");
   refresh();
   // getchar();
   use_default_colors();
