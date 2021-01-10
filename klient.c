@@ -40,30 +40,35 @@ int take_feedback(int que, int type){
 }
 
 
-
-void print_error(char text[TEXT_LEN]){
+void print_error(WINDOW* window, char text[TEXT_LEN]){
+  int x=0,y=0;
+  getyx(window,y,x);
   attron(COLOR_PAIR(2));
-  printw("%s\n\r", text);
-  refresh();
+  mvwprintw(window, y, x+1, "%s\n\r", text);
+  wrefresh(window);
   attroff(COLOR_PAIR(2));
 }
 
-void print_info(char text[TEXT_LEN]){
+void print_info(WINDOW* window, char text[TEXT_LEN]){
+  int x=0,y=0;
+  getyx(window,y,x);
   attron(COLOR_PAIR(1));
-  printw("%s", text);
-  refresh();
+  mvwprintw(window, y, x+1, "%s", text);
+  wrefresh(window);
   attroff(COLOR_PAIR(1));
 }
 
-void print_success(char text[TEXT_LEN]){
+void print_success(WINDOW* window, char text[TEXT_LEN]){
+  int x=0,y=0;
+  getyx(window,y,x);
   attron(COLOR_PAIR(3));
-  printw("%s\n\r", text);
-  refresh();
+  mvwprintw(window, y, x+1, "%s\n\r", text);
+  wrefresh(window);
   attroff(COLOR_PAIR(3));
 }
 
 void print_long(char type, char text1[TEXT_LEN], char text2[NAME_LENGTH]){
-  char* text = malloc(TEXT_LEN+NAME_LENGTH);
+  /*char* text = malloc(TEXT_LEN+NAME_LENGTH);
   sprintf(text, "%s %s", text1, text2);
   switch (type) {
     case 'i': print_info(text); break;
@@ -71,26 +76,26 @@ void print_long(char type, char text1[TEXT_LEN], char text2[NAME_LENGTH]){
     case 's': print_success(text); break;
     default: print_error("To developer: wrong type in print_long");
   }
-  free(text);
+  free(text);*/
 }
 
 
-int get_int_from_user(){
+int get_int_from_user(WINDOW* window){
   char text[10];
   int number;
   while(1){
-    getnstr(text, sizeof(text));  //zabezbieczyć długość
+    wgetnstr(window, text, sizeof(text));  //zabezbieczyć długość
     if(sscanf(text, "%d", &number) == 1){
       return number;
       }
-    else
-      print_error("Podany tekst nie jest liczbą. Spróbuj jeszcze raz: ");
+    // else
+      // print_error("Podany tekst nie jest liczbą. Spróbuj jeszcze raz: ");
     }
   }
 
-char* get_string_from_user(int length){
+char* get_string_from_user(WINDOW* window, int length){
   char* text = malloc(length);
-  getnstr(text, length);
+  wgetnstr(window, text, length);
   return text;
 }
 
@@ -143,12 +148,12 @@ void receive_msg_async(int* pid, int que){
       }
     }
     *pid = x;
-    print_success("Włączono synchroniczne odbieranie wiadomości");
+    // print_success("Włączono synchroniczne odbieranie wiadomości");
   }
   else{  //odbierał → kończy odbieranie
     kill(*pid, 15);
     *pid = -1;
-    print_success("Wyłączono synchroniczne odbieranie wiadomości");
+    // print_success("Wyłączono synchroniczne odbieranie wiadomości");
   }
 }
 
@@ -161,7 +166,7 @@ void receive_msg_sync(int que){
       printw("%s\r\n", message.text);
     }
   }
-  print_success("Nie masz więcej nowych wiadomości.");
+  // print_success("Nie masz więcej nowych wiadomości.");
 }
 
 int get_topics(int server, int id, int que, char topics[][TEXT_LEN]){
@@ -188,14 +193,31 @@ void shutdown(int server){
 }
 
 
+WINDOW* create_window(char* name, int height, int width, int y, int x){
+  WINDOW* window = newwin(height, width, y, x);
+  box(window, 0, 0);
+  mvwprintw(window, 0, 2, name);
+  wmove(window, 1, 0);
+  refresh();
+  wrefresh(window);
+
+  return window;
+}
+
+void close_window(WINDOW* window){
+  print_info(window, "Naciśnij dowolny klawisz, by przejść do menu");
+  wgetch(window);
+
+  wclear(window);
+  wrefresh(window);
+  delwin(window);
+}
+
 int gui_menu(char options[][TEXT_LEN], int options_nr){
   int terminal_width, terminal_height;
   getmaxyx (stdscr, terminal_height, terminal_width);
-  WINDOW* menu_win = newwin(15, terminal_width-8, terminal_height-15, 4);
-  box(menu_win, 0, 0);
+  WINDOW* menu_win = create_window("", 15, terminal_width-8, terminal_height-15, 4);
   noecho();
-  refresh();
-  wrefresh(menu_win);
   keypad(menu_win, true);  //allows to use arrows
 
   int choice = -1;
@@ -233,33 +255,36 @@ int gui_menu(char options[][TEXT_LEN], int options_nr){
 }
 
 int login_menu(int server, int* que){
+  int terminal_width = getmaxx (stdscr);
+  WINDOW* login_win = create_window("LOGIN", 15, terminal_width-16, 8, 8);
+
   int nr_on_server = -1;
+  char name[NAME_LENGTH] = "Obi wan";
+
   while (nr_on_server < 0){
-    char name[NAME_LENGTH] = "Obi wan";
-    print_info("\nDzień dobry!\nPodaj swoją nazwę użytkownika: ");
-    strcpy(name, get_string_from_user(NAME_LENGTH));
+    print_info(login_win, "Dzień dobry!\n\r");
+    print_info(login_win, "Podaj swoją nazwę użytkownika: ");
+    strcpy(name, get_string_from_user(login_win, NAME_LENGTH));
 
     int que_key = login(server, que, name);
     nr_on_server = take_feedback(server, que_key);
     if (nr_on_server == -1){
-      print_error("Taka nazwa już istnieje. Podaj inną nazwę.");
+      print_error(login_win, "Taka nazwa już istnieje. Podaj inną nazwę.");
     }
     else if(nr_on_server == -2){
-      print_error("Na tym serwerze jest zbyt wielu klientów. Nie możesz się zalogować");
+      print_error(login_win, "Na tym serwerze jest zbyt wielu klientów. Nie możesz się zalogować");
       msgctl(*que, IPC_RMID, NULL);
       exit(0);
     }
     else if(nr_on_server >= 0)
-      print_success("Zalogowano");
+      print_success(login_win, "Zalogowano");
   }
-  print_info("Naciśnij dowolny klawisz, by przejść do menu");
-  getch();
-  clear();
+  close_window(login_win);
   return nr_on_server;
 }
 
 void topic_menu(int server, int id, int que){
-    print_info("\n\r-----------NOWY TEMAT-----------\n\r");
+    /*print_info("\n\r-----------NOWY TEMAT-----------\n\r");
     char topic[NAME_LENGTH] = "New topic";
 
     char topics[TEXT_LEN][TEXT_LEN];
@@ -285,11 +310,11 @@ void topic_menu(int server, int id, int que){
 
     print_info("Naciśnij dowolny klawisz, by wrócić do menu.\n\r");
     getch();
-    clear();
+    clear();*/
 }
 
 void sub_menu(int server, int id, int que){
-    print_info("\n\r-----------NOWA SUBSKRYBCJA-----------\n\r");
+  /*  print_info("\n\r-----------NOWA SUBSKRYBCJA-----------\n\r");
     int length;
 
     char topics[TEXT_LEN][TEXT_LEN];
@@ -318,11 +343,11 @@ void sub_menu(int server, int id, int que){
       print_info("Na tym serwerze nie ma żadnego tematu\n");
 
     print_info("Naciśnij dowolny klawisz, by wrócić do menu.\n\r");
-    getch();
+    getch();*/
 }
 
 void msg_menu(int server, int id, int que){
-    print_info("\n\r-----------NOWA WIADOMOŚĆ-----------\n\r");
+  /*  print_info("\n\r-----------NOWA WIADOMOŚĆ-----------\n\r");
     char msg[MESSAGE_LENGTH] = "Empty message";
     int priority;
 
@@ -354,7 +379,7 @@ void msg_menu(int server, int id, int que){
       print_info("Na tym serwerze nie ma żadnego tematu.\n");
 
     print_info("Naciśnij dowolny klawisz, by wrócić do menu.\n\r");
-    getch();
+    getch();*/
 }
 
 
@@ -362,8 +387,7 @@ int main(int argc, char *argv[]) {
   //initialise ncurses
   setlocale(LC_ALL, "pl_PL.UTF-8");
   initscr();
-  int terminal_width, terminal_height;
-  getmaxyx (stdscr, terminal_height, terminal_width);
+  int terminal_width = getmaxx (stdscr);
   echo();
 
   start_color();
@@ -392,7 +416,7 @@ int main(int argc, char *argv[]) {
       case 4: receive_msg_async(&child_pid, que); break;
       case 5: shutdown(server); break;
       case 6: break;
-      default: print_error("Niepoprawny wybór"); //shouldn't happen
+      // default: print_error("Niepoprawny wybór"); //shouldn't happen
     }
   }while(choice != 5 && choice != 6);
 
@@ -400,7 +424,7 @@ int main(int argc, char *argv[]) {
   if (child_pid != -1)
     kill(child_pid, 15);
   move(15, round(terminal_width/2)-6);
-  print_info("Do widzenia!\n");
+  // print_info("Do widzenia!\n");
   refresh();
   getchar();
   use_default_colors();
