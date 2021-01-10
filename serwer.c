@@ -205,7 +205,7 @@ void send_topics(struct client_msg *msg_from_client, struct topic* topics, int l
   struct server_msg message;
   message.type = 6;
   for (int i=0; i<= last_topic; i++){
-    sprintf(message.text, "%d. %s", i, (topics + i)-> name);
+    strcpy(message.text, (topics + i)-> name);
     msgsnd(que, &message, sizeof(message)-sizeof(long), 0);
   }
   strcpy(message.text, "");

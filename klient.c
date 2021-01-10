@@ -8,6 +8,7 @@
 #include <signal.h> //kill
 #include <locale.h>
 #include <ncursesw/ncurses.h>
+#include <math.h> //round
 
 /*TODO:
 old - przy priorytecie działa "1,2,3lub4"
@@ -16,6 +17,7 @@ old - przy priorytecie działa "1,2,3lub4"
 #define NAME_LENGTH 30
 #define MESSAGE_LENGTH 1024
 #define SERVER_QUE_NR 12345
+#define TEXT_LEN 100
 
 struct client_msg{
   long type;
@@ -39,29 +41,29 @@ int take_feedback(int que, int type){
 
 
 
-void print_error(char text[100]){
+void print_error(char text[TEXT_LEN]){
   attron(COLOR_PAIR(2));
   printw("%s\n\r", text);
   refresh();
   attroff(COLOR_PAIR(2));
 }
 
-void print_info(char text[100]){
+void print_info(char text[TEXT_LEN]){
   attron(COLOR_PAIR(1));
   printw("%s", text);
   refresh();
   attroff(COLOR_PAIR(1));
 }
 
-void print_success(char text[100]){
+void print_success(char text[TEXT_LEN]){
   attron(COLOR_PAIR(3));
   printw("%s\n\r", text);
   refresh();
   attroff(COLOR_PAIR(3));
 }
 
-void print_long(char type, char text1[100], char text2[NAME_LENGTH]){
-  char* text = malloc(100+NAME_LENGTH);
+void print_long(char type, char text1[TEXT_LEN], char text2[NAME_LENGTH]){
+  char* text = malloc(TEXT_LEN+NAME_LENGTH);
   sprintf(text, "%s %s", text1, text2);
   switch (type) {
     case 'i': print_info(text); break;
@@ -90,28 +92,6 @@ char* get_string_from_user(int length){
   char* text = malloc(length);
   getnstr(text, length);
   return text;
-}
-
-
-int choose_topic(int nr_of_topics){
-  char choice;
-  int topic;
-  do{
-    choice = 'y';
-    print_info("Podaj numer tematu: ");
-    topic = get_int_from_user();
-    if (topic>=nr_of_topics){
-      print_info("Tego tematu nie ma na liście. Czy mimo to chcesz go wybrać? y/n ");
-      while ((choice = getch())<=' ');
-      print_info("\n");
-    }
-    else if (topic < 0){
-      print_error("Temat nie może być liczbą ujemną. Wybierz temat, który jest na liście.");
-      choice = 'n';
-    }
-  }while(choice != 'y');
-
-  return topic;
 }
 
 int login(int server, int* que, char name[NAME_LENGTH]){
@@ -184,7 +164,7 @@ void receive_msg_sync(int que){
   print_success("Nie masz więcej nowych wiadomości.");
 }
 
-int get_topics(int server, int id, int que){
+int get_topics(int server, int id, int que, char topics[][TEXT_LEN]){
   int nr_of_topics = 0;
   struct client_msg msg;
   msg.type = 5;
@@ -192,13 +172,13 @@ int get_topics(int server, int id, int que){
   msgsnd(server, &msg, sizeof(msg)-sizeof(long), 0);
 
   struct server_msg message;
-  print_info("\n-------TEMATY NA SERWERZE-------\n\r");
   do{
     msgrcv(que, &message, sizeof(message)-sizeof(long), 6, 0);
-    print_long('i', message.text, "\n\r");
+    strcpy(topics[nr_of_topics], message.text);
     nr_of_topics++;
   }while (strcmp(message.text, "") != 0);
-  return nr_of_topics-1;
+  return nr_of_topics-1
+  ;
 }
 
 void shutdown(int server){
@@ -207,6 +187,50 @@ void shutdown(int server){
   msgsnd(server, &message, sizeof(message)-sizeof(long), 0);
 }
 
+
+int gui_menu(char options[][TEXT_LEN], int options_nr){
+  int terminal_width, terminal_height;
+  getmaxyx (stdscr, terminal_height, terminal_width);
+  WINDOW* menu_win = newwin(15, terminal_width-8, terminal_height-15, 4);
+  box(menu_win, 0, 0);
+  noecho();
+  refresh();
+  wrefresh(menu_win);
+  keypad(menu_win, true);  //allows to use arrows
+
+  int choice = -1;
+  int highlight = 0;
+
+  while(choice != 10){ //enter
+    for(int i=0; i<options_nr; i++){
+      if(i == highlight)
+        wattron(menu_win, A_REVERSE); //reverse colors - highlight
+
+      mvwprintw(menu_win, i+1, 1, options[i]);
+      wattroff(menu_win, A_REVERSE);
+    }
+    choice = wgetch(menu_win);
+
+    switch (choice) {
+      case KEY_UP:
+        if (highlight != 0)
+          highlight--;
+        break;
+      case KEY_DOWN:
+        if (highlight != options_nr-1)
+          highlight++;
+        break;
+      default: break;
+    }
+  }
+
+  wclear(menu_win);
+  wrefresh(menu_win); // Refresh it (to leave it blank)
+
+  delwin(menu_win);
+  echo();
+  return highlight;
+}
 
 int login_menu(int server, int* que){
   int nr_on_server = -1;
@@ -229,6 +253,7 @@ int login_menu(int server, int* que){
       print_success("Zalogowano");
   }
   print_info("Naciśnij dowolny klawisz, by przejść do menu");
+  getch();
   clear();
   return nr_on_server;
 }
@@ -237,7 +262,11 @@ void topic_menu(int server, int id, int que){
     print_info("\n\r-----------NOWY TEMAT-----------\n\r");
     char topic[NAME_LENGTH] = "New topic";
 
-    get_topics(server, id, que);
+    char topics[TEXT_LEN][TEXT_LEN];
+    int topics_nr =get_topics(server, id, que, topics);
+    print_info("\n-------TEMATY NA SERWERZE-------\n\r");
+    for (int i=0; i<topics_nr; i++)
+      print_long('i', topics[i], "\n");
 
     print_info("Podaj nazwę nowego tematu: "); //nie może zawierać spacji
     strcpy(topic, get_string_from_user(NAME_LENGTH));
@@ -263,24 +292,30 @@ void sub_menu(int server, int id, int que){
     print_info("\n\r-----------NOWA SUBSKRYBCJA-----------\n\r");
     int length;
 
-    int nr_of_topics = get_topics(server, id, que);
-    int topic = choose_topic(nr_of_topics);
+    char topics[TEXT_LEN][TEXT_LEN];
+    int nr_of_topics = get_topics(server, id, que, topics);
+    if (nr_of_topics > 0){
+      int topic = gui_menu(topics, nr_of_topics);
 
-    print_info("Ile wiadomości z tego tematu chcesz otrzymać? (-1 → wszystkie): ");
-    length = get_int_from_user();
-    while (length<-1 || length == 0) {
-      print_error("Priorytet musi być liczbą całkowitą ≥ -1 i ≠ 0. Spróbuj jeszcze raz: ");
+
+      print_info("Ile wiadomości z tego tematu chcesz otrzymać? (-1 → wszystkie): ");
       length = get_int_from_user();
-    }
+      while (length<-1 || length == 0) {
+        print_error("Priorytet musi być liczbą całkowitą ≥ -1 i ≠ 0. Spróbuj jeszcze raz: ");
+        length = get_int_from_user();
+      }
 
-    register_sub(server, id, topic, length);
+      register_sub(server, id, topic, length);
 
-    int feedback = take_feedback(que, 7);
-    if (feedback == 1){
-      print_error("Taki temat nie istnieje.");
+      int feedback = take_feedback(que, 7);
+      if (feedback == 1){
+        print_error("Taki temat już nie istnieje.");
+      }
+      else if(feedback == 0)
+        print_success("Dodano subkrybcję");
     }
-    else if(feedback == 0)
-      print_success("Dodano subkrybcję");
+    else
+      print_info("Na tym serwerze nie ma żadnego tematu\n");
 
     print_info("Naciśnij dowolny klawisz, by wrócić do menu.\n\r");
     getch();
@@ -291,8 +326,10 @@ void msg_menu(int server, int id, int que){
     char msg[MESSAGE_LENGTH] = "Empty message";
     int priority;
 
-    int nr_of_topics = get_topics(server, id, que);
-    int topic = choose_topic(nr_of_topics);
+    char topics[TEXT_LEN][TEXT_LEN];
+    int nr_of_topics = get_topics(server, id, que, topics);
+    if (nr_of_topics > 0){
+      int topic = gui_menu(topics, nr_of_topics);
 
     print_info("Wpisz treść wiadomości: \n\r> ");
     strcpy(msg, get_string_from_user(MESSAGE_LENGTH));
@@ -312,56 +349,57 @@ void msg_menu(int server, int id, int que){
     }
     else if (feedback == 0)
       print_success("Wiadomość wysłana");
+    }
+    else
+      print_info("Na tym serwerze nie ma żadnego tematu.\n");
 
     print_info("Naciśnij dowolny klawisz, by wrócić do menu.\n\r");
     getch();
 }
 
+
 int main(int argc, char *argv[]) {
+  //initialise ncurses
   setlocale(LC_ALL, "pl_PL.UTF-8");
   initscr();
+  int terminal_width, terminal_height;
+  getmaxyx (stdscr, terminal_height, terminal_width);
   echo();
-  if (has_colors() == FALSE) {
-    endwin();
-    printf("Your terminal does not support color\n");
-    exit(1);
-  }
-  else{
-    start_color();
-    use_default_colors();
-    init_pair(1, COLOR_YELLOW, -1); //for info
-    init_pair(2, COLOR_RED, -1); //for error
-    init_pair(3, COLOR_GREEN, -1); //for success
-  }
+
+  start_color();
+  use_default_colors();
+  init_pair(1, COLOR_YELLOW, -1);  //for info
+  init_pair(2, COLOR_RED, -1);     //for error
+  init_pair(3, COLOR_GREEN, -1);   //for success
 
   int server = msgget(SERVER_QUE_NR, 0);
   int que = 0;
-  int choice = ' ';
   int child_pid = -1;
 
-
-
   int nr_on_server = login_menu(server, &que);
+  int choice = -1;
+
+  char menu[7][TEXT_LEN] = {"nowy temat", "zapis na subskrybcję", "nowa wiadomość", "odbierz wiadomości", "włącz/wyłącz automatyczne odbieranie wiadomości", "wyłącz system", "zakończ"};
 
   do{
-    print_info("\n\r------------MENU------------------\n1 – utwórz nowy temat\n2 – zapisz się na subskrybcję\n3 – nowa wiadomość\n4 – odbierz wiadomości\n5 – włącz/wyłącz asynchroniczne odbieranie wiadomości\n6 – wyłącz system\n7 – zakończ\n\nPodaj numer i naciśnij enter: ");
-    while ((choice = getch())<=' ');
-    clear();
+    choice = gui_menu(menu, 7);
+
     switch (choice) {
-      case '1': topic_menu(server, nr_on_server, que); break;
-      case '2': sub_menu(server, nr_on_server, que); break;
-      case '3': msg_menu(server, nr_on_server, que); break;
-      case '4': receive_msg_sync(que);  break;
-      case '5': receive_msg_async(&child_pid, que); break;
-      case '6': shutdown(server); break;
-      case '7': break;
-      default: print_error("Niepoprawny wybór");
+      case 0: topic_menu(server, nr_on_server, que); break;
+      case 1: sub_menu(server, nr_on_server, que); break;
+      case 2: msg_menu(server, nr_on_server, que); break;
+      case 3: receive_msg_sync(que);  break;
+      case 4: receive_msg_async(&child_pid, que); break;
+      case 5: shutdown(server); break;
+      case 6: break;
+      default: print_error("Niepoprawny wybór"); //shouldn't happen
     }
-  }while(choice != '6' && choice != '7');
+  }while(choice != 5 && choice != 6);
+
 
   if (child_pid != -1)
     kill(child_pid, 15);
-  move(15, 30);
+  move(15, round(terminal_width/2)-6);
   print_info("Do widzenia!\n");
   refresh();
   getchar();
