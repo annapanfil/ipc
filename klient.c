@@ -4,6 +4,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdbool.h> //bool
 #include <unistd.h>
 #include <signal.h> //kill
 #include <locale.h>
@@ -14,7 +15,7 @@
 - kolory
 - brak enterów przy błędach? (p. sub menu <-1)
 - odbieranie w procesie potomnym: w pętli wszystkie tematy. Przekazywanie nowych poleceń przez pipe'a, kolejkę lub sygnały (da się?)
-- msg receive async
+- msg receive async - czas (XtAppAddTimeout(app,interval,do_stuff,data);, alarm)
 - sprawdzenie subskrybcji
 - zmiana nazw w sync
 */
@@ -24,6 +25,7 @@
 #define SERVER_QUE_NR 12345
 #define TEXT_LEN 100
 #define FEEDBACK_TYPE 2
+#define REFRESH_TIME 1
 
 struct client_msg{
   long type;
@@ -38,6 +40,7 @@ struct server_msg{
   int info;
   char text[MESSAGE_LENGTH+NAME_LENGTH+2];
 };
+
 
 void print_error(WINDOW* window, char text[TEXT_LEN]){
   int x=0,y=0;
@@ -167,22 +170,17 @@ void send_msg(int server, int id, int topic, char msg_text[MESSAGE_LENGTH], int 
   msgsnd(server, &message, sizeof(message)-sizeof(long), 0);
 }
 
-void receive_msg_async(WINDOW* window, int* pid, int que){
-  if (*pid == -1){  //nie odbierał → zaczyna odbierać
-    struct server_msg message;
-    int x;
-    if ((x=fork()) == 0){
-      while (1) {
-        msgrcv(que, &message, sizeof(message)-sizeof(long), -5, 0);
-        print_long(window, 'i', message.text, "\n\n\r");
+void receive_msg_async(WINDOW* window, int* topics, int topics_num, int que){
+  struct server_msg message;
+  int size;
+  for(int i=0; i<topics_num; i++){
+    size=0;
+    do{
+      size = msgrcv(que, &message, sizeof(message)-sizeof(long), *(topics+i)+3, IPC_NOWAIT);
+      if(size != -1){
+        print_long(window, 'i', message.text, "\n\r");
       }
-    }
-    *pid = x;
-
-  }
-  else{  //odbierał → kończy odbieranie
-    kill(*pid, 15);
-    *pid = -1;
+    }while (size != -1);
   }
 }
 
@@ -260,7 +258,6 @@ void shutdown(int server){
   message.type = 6;
   msgsnd(server, &message, sizeof(message)-sizeof(long), 0);
 }
-
 
 int gui_menu(WINDOW* menu_win, char options[][TEXT_LEN], int options_nr){
   box(menu_win, 0, 0);
@@ -466,8 +463,7 @@ int receive_msg_async_menu(WINDOW* window, int* topics_async, int topics_async_n
       if (*(topics_async + i) == topic){      //was in array
         in_array = true;
         topics_async_num--;
-        print_success(window, "Wyłączono asynchroniczne odbieranie wiadomości\n\r");
-        break;
+        print_success(window, "WYŁĄCZONO asynchroniczne odbieranie wiadomości\n\r");
       }
       if (in_array){  //move rest of the topics
         *(topics_async + i) = *(topics_async+i+1);
@@ -478,6 +474,10 @@ int receive_msg_async_menu(WINDOW* window, int* topics_async, int topics_async_n
         topics_async_num++;
         print_success(window, "Włączono asynchroniczne odbieranie wiadomości\n\r");
     }
+    for(int i=0; i<topics_async_num; i++){
+      wprintw(window, "%d\n\r", *(topics_async + i));
+      wrefresh(window);
+    }
   }
   else
     print_info(window, "Nie subskrybujesz żadnego tematu\n\r");
@@ -487,6 +487,27 @@ int receive_msg_async_menu(WINDOW* window, int* topics_async, int topics_async_n
   return topics_async_num;
 }
 
+int child(WINDOW* left_win, WINDOW* right_win, int server, int id, int que){
+  bool user_wants_something = false;
+  void on_alarm() //user wants something
+  {
+    user_wants_something = true;
+  }
+
+  signal(SIGALRM, on_alarm);
+  int topics_async[100];           //WARNING: ograniczona
+  int topics_async_num = 0;
+  int parent = getppid();
+
+  while(1){
+    receive_msg_async(right_win, topics_async, topics_async_num, que);
+    if (user_wants_something){
+      topics_async_num = receive_msg_async_menu(left_win, topics_async, topics_async_num, server, id, que);
+      user_wants_something = false;
+      kill(parent, SIGALRM);
+    }
+  }
+}
 
 int main(int argc, char *argv[]) {
   //initialise ncurses
@@ -513,38 +534,45 @@ int main(int argc, char *argv[]) {
   int que = 0;
 
   int nr_on_server = login_menu(server, &que);
-  int choice = -1;
-  int topics_async[100];           //ograniczona
-  int topics_async_num = 0;
+  int pid = -1;
 
-  char menu[7][TEXT_LEN] = {"nowy temat", "zapis na subskrybcję", "nowa wiadomość", "odbierz wiadomości", "włącz/wyłącz automatyczne odbieranie wiadomości", "wyłącz system", "zakończ"};
+  if((pid = fork()) == 0){
+    child(left_win, right_win, server, nr_on_server, que);
+  }
+  else{
+    void on_alarm(){}
+    signal(SIGALRM, on_alarm);
 
-  do{
-    choice = gui_menu(left_win, menu, 7);
+    int choice = -1;
+    char menu[7][TEXT_LEN] = {"nowy temat", "zapis na subskrybcję", "nowa wiadomość", "odbierz wiadomości", "włącz/wyłącz automatyczne odbieranie wiadomości", "wyłącz system", "zakończ"};
 
-    switch (choice) {
-      case 0: topic_menu(left_win, server, nr_on_server, que); break;
-      case 1: sub_menu(left_win, server, nr_on_server, que); break;
-      case 2: msg_menu(left_win, server, nr_on_server, que); break;
-      case 3: receive_msg_sync_menu(left_win, right_win, server, nr_on_server, que); break;
-      case 4: topics_async_num = receive_msg_async_menu(left_win, topics_async, topics_async_num, server, nr_on_server, que); break;
-      case 5: shutdown(server); break;
-      case 6: break;
-      default: print_error(left_win, "Niepoprawny wybór w menu głównym\n\r"); //shouldn't happen
-    }
-    // receive_msg_async(right_win, topics_async, &topics_async_num);
+    do{
+      choice = gui_menu(left_win, menu, 7);
 
-  }while(choice != 5 && choice != 6);
+      switch (choice) {
+        case 0: topic_menu(left_win, server, nr_on_server, que); break;
+        case 1: sub_menu(left_win, server, nr_on_server, que); break;
+        case 2: msg_menu(left_win, server, nr_on_server, que); break;
+        case 3: receive_msg_sync_menu(left_win, right_win, server, nr_on_server, que); break;
+        case 4: kill(pid, SIGALRM); pause(); break;//TODO alrm
+        case 5: shutdown(server); break;
+        case 6: break;
+        default: print_error(left_win, "Niepoprawny wybór w menu głównym\n\r"); //shouldn't happen
+      }
+    }while(choice != 5 && choice != 6);
 
 
-  clear();
-  refresh();
-  wmove(main_win, 8, 16);
-  print_info(main_win, "Do widzenia!\n");
-  getchar();
-  use_default_colors();
-  delwin(left_win);
-  delwin(right_win);
-  endwin();
-  return 0;
+    clear();
+    refresh();
+    wmove(main_win, 8, 16);
+    print_info(main_win, "Do widzenia!\n");
+    getchar();
+    use_default_colors();
+    delwin(left_win);
+    delwin(right_win);
+    endwin();
+    kill(pid, SIGTERM);
+    return 0;
+  }
+  return 1; //shouldn't happen
 }
