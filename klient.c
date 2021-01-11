@@ -11,10 +11,13 @@
 #include <math.h> //round
 
 /*TODO:
-old - przy priorytecie działa "1,2,3lub4"
 - czyszczenie okna przy błędach
 - kolory
 - brak enterów przy błędach? (p. sub menu <-1)
+- message menu
+- prawe okienko
+- wyświetlanie wiadomości
+- pożegnanie (ASCII ART?)
 */
 
 #define NAME_LENGTH 30
@@ -203,6 +206,7 @@ void close_window(WINDOW* window){
   wrefresh(window);
 }
 
+
 int gui_menu(WINDOW* menu_win, char options[][TEXT_LEN], int options_nr){
   box(menu_win, 0, 0);
   noecho();
@@ -343,24 +347,26 @@ void sub_menu(WINDOW* window, int server, int id, int que){
     close_window(window);
 }
 
-void msg_menu(int server, int id, int que){
-  /*  print_info(window, "\n\r-----------NOWA WIADOMOŚĆ-----------\n\r");
+void msg_menu(WINDOW* window, int server, int id, int que){
     char msg[MESSAGE_LENGTH] = "Empty message";
     int priority;
 
     char topics[TEXT_LEN][TEXT_LEN];
     int nr_of_topics = get_topics(server, id, que, topics);
     if (nr_of_topics > 0){
-      int topic = gui_menu(topics, nr_of_topics);
+      int topic = gui_menu(window, topics, nr_of_topics);
 
+    box(window, 0, 0);
+    mvwprintw(window, 0, 2, "NOWA WIADOMOŚĆ");
+    wmove(window, 1, 0);
     print_info(window, "Wpisz treść wiadomości: \n\r> ");
-    strcpy(msg, get_string_from_user(MESSAGE_LENGTH));
+    strcpy(msg, get_string_from_user(window, MESSAGE_LENGTH));
 
     print_info(window, "Priorytet wiadomości (1-5, gdzie 1 – najwyższy): ");
-    priority = get_int_from_user();
+    priority = get_int_from_user(window);
     while (priority < 1 || priority > 5) {
       print_error(window, "Priorytet musi być równy 1, 2, 3, 4 lub 5. Spróbuj jeszcze raz: ");
-      priority = get_int_from_user();
+      priority = get_int_from_user(window);
     }
 
     send_msg(server, id, topic, msg, priority);
@@ -375,8 +381,7 @@ void msg_menu(int server, int id, int que){
     else
       print_info(window, "Na tym serwerze nie ma żadnego tematu.\n");
 
-    print_info(window, "Naciśnij dowolny klawisz, by wrócić do menu.\n\r");
-    getch();*/
+    close_window(window);
 }
 
 
@@ -411,12 +416,12 @@ int main(int argc, char *argv[]) {
     switch (choice) {
       case 0: topic_menu(left_win, server, nr_on_server, que); break;
       case 1: sub_menu(left_win, server, nr_on_server, que); break;
-      case 2: msg_menu(server, nr_on_server, que); break;
+      case 2: msg_menu(left_win, server, nr_on_server, que); break;
       case 3: receive_msg_sync(que);  break;
       case 4: receive_msg_async(&child_pid, que); break;
       case 5: shutdown(server); break;
       case 6: break;
-      // default: print_error(window, "Niepoprawny wybór"); //shouldn't happen
+      default: print_error(left_win, "Niepoprawny wybór w menu głównym"); //shouldn't happen
     }
   }while(choice != 5 && choice != 6);
 
