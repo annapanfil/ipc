@@ -195,41 +195,44 @@ void receive_msg_sync(WINDOW* window, int que, int topic){
 
   first_item.next_item = NULL;
 
+  struct item* iptr = &first_item;
+
   int size = 0;
   struct server_msg message;
   while (size != -1){
     size = msgrcv(que, &message, sizeof(message)-sizeof(long), topic, IPC_NOWAIT);
-    wprintw(window, "odczytano %d", size);
 
     if (size != -1){
       //sort messages by priority (insertion sort)
-      struct item* curr_item = &first_item;
+      struct item* curr_item = iptr;
       struct item* prev_item = NULL;
       while(curr_item -> next_item != NULL && curr_item->msg.info < message.info){
         prev_item = curr_item;
         curr_item = curr_item -> next_item;
       }
-      struct item new_item;
-      new_item.msg = message;
-      new_item.next_item = curr_item;
+      struct item* new_item;
+      new_item = (struct item*)malloc(sizeof(struct item));
+      new_item->msg = message;
+      new_item->next_item = curr_item;
 
       if (prev_item != NULL){
-        prev_item->next_item = &new_item;
+        prev_item->next_item = new_item;
       }
       else{ //it was the first item
-        first_item = new_item;
-      }
-      wprintw(window, "Dodana.");
+        iptr = new_item;
+    }
     }
   }
   //print all messages
-  struct item* curr_item = &first_item;
+  struct item* curr_item = iptr;
+  struct item* prev_item = NULL;
   while(curr_item -> next_item != NULL){
-    print_long(window, 'i', curr_item->msg.text, " koniec\n\r");
+    print_long(window, 'i', curr_item->msg.text, "\n\r");
+
     curr_item = curr_item -> next_item;
-      // wprintw(window, "jest %s\n\r", message.text);
-    }
-  // }
+    if (prev_item != NULL)
+      free(curr_item);
+  }
   print_success(window, "Nie masz więcej nowych wiadomości.");
 }
 
