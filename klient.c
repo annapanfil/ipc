@@ -11,13 +11,9 @@
 #include <math.h> //round
 
 /*TODO:
-- czyszczenie okna przy błędach
 - kolory
 - brak enterów przy błędach? (p. sub menu <-1)
-- message menu
-- prawe okienko
-- wyświetlanie wiadomości
-- pożegnanie (ASCII ART?)
+- sygnał dla procesu potomnego, nie zamykanie
 */
 
 #define NAME_LENGTH 30
@@ -39,18 +35,13 @@ struct server_msg{
   char text[MESSAGE_LENGTH+NAME_LENGTH+2];
 };
 
-int take_feedback(int que, int type){
-  struct server_msg feedback;
-  msgrcv(que, &feedback, sizeof(feedback)-sizeof(long), type, 0);
-    return feedback.info;
-}
 
 
 void print_error(WINDOW* window, char text[TEXT_LEN]){
   int x=0,y=0;
   getyx(window,y,x);
   attron(COLOR_PAIR(2));
-  mvwprintw(window, y, x+1, "%s\n\r", text);
+  mvwprintw(window, y, x+1, "%s", text);
   wrefresh(window);
   attroff(COLOR_PAIR(2));
 }
@@ -80,9 +71,25 @@ void print_long(WINDOW* window, char type, char text1[TEXT_LEN], char text2[NAME
     case 'i': print_info(window, text); break;
     case 'e': print_error(window, text); break;
     case 's': print_success(window, text); break;
-    default: print_error(window, "To developer: wrong type in print_long");
+    default: print_error(window, "To developer: wrong type in print_long\n\r");
   }
   free(text);
+}
+
+void close_window(WINDOW* window){
+  print_info(window, "Naciśnij dowolny klawisz, by przejść do menu");
+  wgetch(window);
+
+  wclear(window);
+  wrefresh(window);
+}
+
+void clean_window(WINDOW* window, char* title){
+  wclear(window);
+  box(window, 0, 0);
+  mvwprintw(window, 0, 2, title);
+  wmove(window, 1, 0);
+  wrefresh(window);
 }
 
 
@@ -93,17 +100,32 @@ int get_int_from_user(WINDOW* window){
     wgetnstr(window, text, sizeof(text));  //zabezbieczyć długość
     if(sscanf(text, "%d", &number) == 1){
       return number;
-      }
-    else
+    }
+    else{
+      clean_window(window, "BŁĄD!");
       print_error(window, "Podany tekst nie jest liczbą. Spróbuj jeszcze raz: ");
     }
   }
+}
 
 char* get_string_from_user(WINDOW* window, int length){
   char* text = malloc(length);
-  wgetnstr(window, text, length);
+  do{
+    wgetnstr(window, text, length);
+    if (!strcmp(text, "")){ //są równe
+      clean_window(window, "BŁĄD");
+      print_error(window, "To pole nie może być puste. Spróbuj jeszcze raz: ");
+    }
+  }while(!strcmp(text, ""));
   return text;
 }
+
+
+int take_feedback(int que, int type){
+  struct server_msg feedback;
+  msgrcv(que, &feedback, sizeof(feedback)-sizeof(long), type, 0);
+    return feedback.info;
+  }
 
 int login(int server, int* que, char name[NAME_LENGTH]){
   struct client_msg login_msg;
@@ -143,27 +165,27 @@ void send_msg(int server, int id, int topic, char msg_text[MESSAGE_LENGTH], int 
   msgsnd(server, &message, sizeof(message)-sizeof(long), 0);
 }
 
-void receive_msg_async(int* pid, int que){
+void receive_msg_async(WINDOW* window, int* pid, int que){
   if (*pid == -1){  //nie odbierał → zaczyna odbierać
     struct server_msg message;
     int x;
     if ((x=fork()) == 0){
       while (1) {
         msgrcv(que, &message, sizeof(message)-sizeof(long), -5, 0);
-        printw("%s\r\n", message.text);
+        print_long(window, 'i', message.text, "\n\n\r");
       }
     }
     *pid = x;
-    // print_success(window, "Włączono synchroniczne odbieranie wiadomości");
+    print_success(window, "Włączono synchroniczne odbieranie wiadomości");
   }
   else{  //odbierał → kończy odbieranie
     kill(*pid, 15);
     *pid = -1;
-    // print_success(window, "Wyłączono synchroniczne odbieranie wiadomości");
+    print_success(window, "Wyłączono synchroniczne odbieranie wiadomości");
   }
 }
 
-void receive_msg_sync(int que){
+void receive_msg_sync(WINDOW* window, int que){
   int size = 0;
   struct server_msg message;
   while (size != -1){
@@ -172,7 +194,7 @@ void receive_msg_sync(int que){
       printw("%s\r\n", message.text);
     }
   }
-  // print_success(window, "Nie masz więcej nowych wiadomości.");
+  print_success(window, "Nie masz więcej nowych wiadomości.");
 }
 
 int get_topics(int server, int id, int que, char topics[][TEXT_LEN]){
@@ -196,14 +218,6 @@ void shutdown(int server){
   struct client_msg message;
   message.type = 6;
   msgsnd(server, &message, sizeof(message)-sizeof(long), 0);
-}
-
-void close_window(WINDOW* window){
-  print_info(window, "Naciśnij dowolny klawisz, by przejść do menu");
-  wgetch(window);
-
-  wclear(window);
-  wrefresh(window);
 }
 
 
@@ -247,11 +261,7 @@ int gui_menu(WINDOW* menu_win, char options[][TEXT_LEN], int options_nr){
 int login_menu(int server, int* que){
   int terminal_width = getmaxx (stdscr);
   WINDOW* login_win = newwin(15, terminal_width-16, 8, 8);
-  box(login_win, 0, 0);
-  mvwprintw(login_win, 0, 2, "LOGOWANIE");
-  wmove(login_win, 1, 0);
-  refresh();
-  wrefresh(login_win);
+  clean_window(login_win, "LOGOWANIE");
 
   int nr_on_server = -1;
   char name[NAME_LENGTH] = "Obi wan";
@@ -261,13 +271,15 @@ int login_menu(int server, int* que){
     print_info(login_win, "Podaj swoją nazwę użytkownika: ");
     strcpy(name, get_string_from_user(login_win, NAME_LENGTH));
 
+    clean_window(login_win, "LOGOWANIE");
+
     int que_key = login(server, que, name);
     nr_on_server = take_feedback(server, que_key);
     if (nr_on_server == -1){
-      print_error(login_win, "Taka nazwa już istnieje. Podaj inną nazwę.");
+      print_error(login_win, "Taka nazwa już istnieje. Podaj inną nazwę: ");
     }
     else if(nr_on_server == -2){
-      print_error(login_win, "Na tym serwerze jest zbyt wielu klientów. Nie możesz się zalogować");
+      print_error(login_win, "Na tym serwerze jest zbyt wielu klientów. Nie możesz się zalogować\n\r");
       msgctl(*que, IPC_RMID, NULL);
       exit(0);
     }
@@ -279,13 +291,11 @@ int login_menu(int server, int* que){
 }
 
 void topic_menu(WINDOW* window, int server, int id, int que){
-    box(window, 0, 0);
-    mvwprintw(window, 0, 2, "NOWY TEMAT");
-    wmove(window, 1, 0);
+    clean_window(window, "NOWY TEMAT");
     char topic[NAME_LENGTH] = "New topic";
 
     char topics[TEXT_LEN][TEXT_LEN];
-    int topics_nr =get_topics(server, id, que, topics);
+    int topics_nr = get_topics(server, id, que, topics);
     if(topics_nr > 0){
       print_info(window, "TEMATY NA SERWERZE:\n\r");
       for (int i=0; i<topics_nr; i++)
@@ -298,13 +308,14 @@ void topic_menu(WINDOW* window, int server, int id, int que){
     strcpy(topic, get_string_from_user(window, NAME_LENGTH));
 
     register_topic(server, id, topic);
+    clean_window(window, "NOWY TEMAT");
 
     int feedback = take_feedback(que, 7);
     if (feedback == 1){
-      print_error(window, "Taki temat już istnieje");
+      print_error(window, "Taki temat już istnieje\n\r");
     }
     else if(feedback == 2){
-      print_error(window, "Na tym serwerze jest zbyt wiele tematów. Nie możesz dodać kolejnego.");
+      print_error(window, "Na tym serwerze jest zbyt wiele tematów. Nie możesz dodać kolejnego.\n\r");
     }
     else if(feedback == 0)
       print_success(window, "Dodano temat");
@@ -313,33 +324,30 @@ void topic_menu(WINDOW* window, int server, int id, int que){
 }
 
 void sub_menu(WINDOW* window, int server, int id, int que){
-    box(window, 0, 0);
-    mvwprintw(window, 0, 2, "NOWA SUBSKRYBCJA");
-    wmove(window, 1, 0);
     int length;
 
     char topics[TEXT_LEN][TEXT_LEN];
     int nr_of_topics = get_topics(server, id, que, topics);
     if (nr_of_topics > 0){
       int topic = gui_menu(window, topics, nr_of_topics);
-      box(window, 0, 0);
-      mvwprintw(window, 0, 2, "NOWA SUBSKRYBCJA");
-      wmove(window, 1, 0);
+      clean_window(window, "NOWA SUBSKRYBCJA");
       print_info(window, "Ile wiadomości z tego tematu chcesz otrzymać? (-1 → wszystkie): ");
       length = get_int_from_user(window);
       while (length<-1 || length == 0) {
+        clean_window(window, "NOWA SUBSKRYBCJA");
         print_error(window, "Priorytet musi być liczbą całkowitą ≥ -1 i ≠ 0. Spróbuj jeszcze raz: ");
         length = get_int_from_user(window);
       }
 
       register_sub(server, id, topic, length);
+      clean_window(window, "NOWA SUBSKRYBCJA");
 
       int feedback = take_feedback(que, 7);
       if (feedback == 1){     //shouldn't happen
-        print_error(window, "Taki temat już nie istnieje.");
+        print_error(window, "Taki temat już nie istnieje.\n\r");
       }
       else if(feedback == 0)
-        print_success(window, "Dodano subkrybcję");
+        print_success(window, "Dodano subkrybcję.");
     }
     else
       print_info(window, "Na tym serwerze nie ma żadnego tematu\n");
@@ -356,24 +364,26 @@ void msg_menu(WINDOW* window, int server, int id, int que){
     if (nr_of_topics > 0){
       int topic = gui_menu(window, topics, nr_of_topics);
 
-    box(window, 0, 0);
-    mvwprintw(window, 0, 2, "NOWA WIADOMOŚĆ");
-    wmove(window, 1, 0);
-    print_info(window, "Wpisz treść wiadomości: \n\r> ");
+    clean_window(window, "NOWA WIADOMOŚĆ");
+    print_info(window, "Wpisz treść wiadomości:\n\r");
+    print_info(window, "> ");
     strcpy(msg, get_string_from_user(window, MESSAGE_LENGTH));
 
     print_info(window, "Priorytet wiadomości (1-5, gdzie 1 – najwyższy): ");
     priority = get_int_from_user(window);
+
+    clean_window(window, "NOWA WIADOMOŚĆ");
     while (priority < 1 || priority > 5) {
       print_error(window, "Priorytet musi być równy 1, 2, 3, 4 lub 5. Spróbuj jeszcze raz: ");
       priority = get_int_from_user(window);
     }
 
     send_msg(server, id, topic, msg, priority);
+    clean_window(window, "NOWA WIADOMOŚĆ");
 
     int feedback = take_feedback(que, 7);
     if (feedback == 1){
-      print_error(window, "Taki temat nie istnieje.");
+      print_error(window, "Taki temat nie istnieje.\n\r");
     }
     else if (feedback == 0)
       print_success(window, "Wiadomość wysłana");
@@ -388,12 +398,16 @@ void msg_menu(WINDOW* window, int server, int id, int que){
 int main(int argc, char *argv[]) {
   //initialise ncurses
   setlocale(LC_ALL, "pl_PL.UTF-8");
-  initscr();
+  WINDOW* main_win = initscr();
   echo();
   int terminal_width, terminal_height;
   getmaxyx (stdscr, terminal_height, terminal_width);
 
   WINDOW* left_win = newwin(terminal_height-8, round(2*terminal_width/3)-8, 4, 4);
+  WINDOW* right_win = newwin(terminal_height-8, round(terminal_width/3)-8, 4, round(2*terminal_width/3)+4);
+  box(right_win, 0, 0);
+  mvwprintw(right_win, 0, 2, "TWOJE WIADOMOŚCI");
+  wmove(right_win, 1, 0);
 
   start_color();
   use_default_colors();
@@ -401,6 +415,7 @@ int main(int argc, char *argv[]) {
   init_pair(2, COLOR_RED, -1);     //for error
   init_pair(3, COLOR_GREEN, -1);   //for success
 
+  //initialise rest of the program
   int server = msgget(SERVER_QUE_NR, 0);
   int que = 0;
   int child_pid = -1;
@@ -417,23 +432,25 @@ int main(int argc, char *argv[]) {
       case 0: topic_menu(left_win, server, nr_on_server, que); break;
       case 1: sub_menu(left_win, server, nr_on_server, que); break;
       case 2: msg_menu(left_win, server, nr_on_server, que); break;
-      case 3: receive_msg_sync(que);  break;
-      case 4: receive_msg_async(&child_pid, que); break;
+      case 3: receive_msg_sync(right_win, que);  break;
+      case 4: receive_msg_async(right_win, &child_pid, que); break;
       case 5: shutdown(server); break;
       case 6: break;
-      default: print_error(left_win, "Niepoprawny wybór w menu głównym"); //shouldn't happen
+      default: print_error(left_win, "Niepoprawny wybór w menu głównym\n\r"); //shouldn't happen
     }
   }while(choice != 5 && choice != 6);
 
 
-  if (child_pid != -1)
-    kill(child_pid, 15);
-  move(15, round(terminal_width/2)-6);
-  // print_info(window, "Do widzenia!\n");
+  clear();
   refresh();
-  // getchar();
+  wmove(main_win, 8, 16);
+  print_info(main_win, "Do widzenia!\n");
+  getchar();
   use_default_colors();
   delwin(left_win);
+  delwin(right_win);
   endwin();
+  if (child_pid != -1)
+    kill(child_pid, 15);
   return 0;
 }
