@@ -105,7 +105,7 @@ int login(struct client_msg *message, struct client* clients, int* client_nr){
 void add_topic(struct client_msg *message, struct topic* topics, int* topic_nr, struct client* clients){
   printf("\e[0;36mⓘ Add topic\e[m\n");
   if (*topic_nr >= TOPICS_NR){
-    send_feedback((clients+message->id)->que, 7, 2);  //limit tematów przekroczony
+    send_feedback((clients+message->id)->que, 2, 2);  //limit tematów przekroczony
     return;
   }
   else{
@@ -115,7 +115,7 @@ void add_topic(struct client_msg *message, struct topic* topics, int* topic_nr, 
 
     for (int i=0; i<*topic_nr; i++){
       if (strcmp((topics+i)->name, topic.name) == 0){
-        send_feedback((clients+message->id)->que, 7, 1);  //nazwa tematu się powtarza
+        send_feedback((clients+message->id)->que, 2, 1);  //nazwa tematu się powtarza
         return;
       }
     }
@@ -125,7 +125,7 @@ void add_topic(struct client_msg *message, struct topic* topics, int* topic_nr, 
 
     printf("New topic: %s\n", topic.name);
     // printf("id: %d\nclient que: %d\n", message->id, (clients+message->id)->que);
-    send_feedback((clients+message->id)->que, 7, 0); //wszystko OK
+    send_feedback((clients+message->id)->que, 2, 0); //wszystko OK
     *topic_nr = *topic_nr+1;
   }
 }
@@ -140,7 +140,7 @@ void add_sub(struct client_msg *message, struct topic* topics, int last_topic, s
   new_sub->length = message->number;
 
   if (message->topic > last_topic){
-    send_feedback(new_sub->client_que, 7, 1); //temat nie istnieje
+    send_feedback(new_sub->client_que, 2, 1); //temat nie istnieje
     return;
   }
 
@@ -151,7 +151,7 @@ void add_sub(struct client_msg *message, struct topic* topics, int last_topic, s
   topic->first_sub = new_sub;
 
   // print_subs(topics + message->topic);
-  send_feedback(new_sub->client_que, 7, 0);
+  send_feedback(new_sub->client_que, 2, 0);
 }
 
 void decrement_sub_length(struct sub* sub, struct sub* prev_sub, struct topic* topic){
@@ -173,17 +173,18 @@ void send_msgs(struct client_msg *msg_from_client, struct topic* topics, int las
   printf("\e[0;36mⓘ Send messages\e[m\n");
 
   if ((msg_from_client->topic) > last_topic){
-    send_feedback((clients+msg_from_client->id)->que, 7, 1);  //temat nie istnieje
+    send_feedback((clients+msg_from_client->id)->que, 2, 1);  //temat nie istnieje
     return;
   }
   else{
-    send_feedback((clients+msg_from_client->id)->que, 7, 0);  //OK
+    send_feedback((clients+msg_from_client->id)->que, 2, 0);  //OK
 
     // print_subs(topics + (msg_from_client->topic));
     struct sub* sub = (topics + (msg_from_client->topic)) -> first_sub;
     struct sub* prev_sub = NULL;
     struct server_msg msg;
-    msg.type = msg_from_client->number;
+    msg.type = msg_from_client->topic + 3;
+    msg.info = msg_from_client->number;
     sprintf(msg.text, "%s: %s", (topics + (msg_from_client->topic))->name, msg_from_client->text);
 
     //send messages to all subscribents
@@ -203,7 +204,7 @@ void send_msgs(struct client_msg *msg_from_client, struct topic* topics, int las
 void send_topics(struct client_msg *msg_from_client, struct topic* topics, int last_topic, struct client* clients){
   int que = (clients + msg_from_client->id) -> que;
   struct server_msg message;
-  message.type = 6;
+  message.type = 1;
   for (int i=0; i<= last_topic; i++){
     strcpy(message.text, (topics + i)-> name);
     msgsnd(que, &message, sizeof(message)-sizeof(long), 0);

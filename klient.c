@@ -14,12 +14,16 @@
 - kolory
 - brak enterów przy błędach? (p. sub menu <-1)
 - sygnał dla procesu potomnego, nie zamykanie
+- wybór tematu przy odbiorze
+  - sprawdzenie subskrybcji
+- menu do msg_receive
 */
 
 #define NAME_LENGTH 30
 #define MESSAGE_LENGTH 1024
 #define SERVER_QUE_NR 12345
 #define TEXT_LEN 100
+#define FEEDBACK_TYPE 2
 
 struct client_msg{
   long type;
@@ -34,8 +38,6 @@ struct server_msg{
   int info;
   char text[MESSAGE_LENGTH+NAME_LENGTH+2];
 };
-
-
 
 void print_error(WINDOW* window, char text[TEXT_LEN]){
   int x=0,y=0;
@@ -112,11 +114,11 @@ char* get_string_from_user(WINDOW* window, int length){
   char* text = malloc(length);
   do{
     wgetnstr(window, text, length);
-    if (!strcmp(text, "")){ //są równe
+    if (strcmp(text, "") == 0){ //są równe
       clean_window(window, "BŁĄD");
       print_error(window, "To pole nie może być puste. Spróbuj jeszcze raz: ");
     }
-  }while(!strcmp(text, ""));
+  }while(strcmp(text, "") == 0);
   return text;
 }
 
@@ -176,24 +178,58 @@ void receive_msg_async(WINDOW* window, int* pid, int que){
       }
     }
     *pid = x;
-    print_success(window, "Włączono synchroniczne odbieranie wiadomości");
+    print_success(window, "Włączono asynchroniczne odbieranie wiadomości");
   }
   else{  //odbierał → kończy odbieranie
     kill(*pid, 15);
     *pid = -1;
-    print_success(window, "Wyłączono synchroniczne odbieranie wiadomości");
+    print_success(window, "Wyłączono asynchroniczne odbieranie wiadomości");
   }
 }
 
-void receive_msg_sync(WINDOW* window, int que){
+void receive_msg_sync(WINDOW* window, int que, int topic){
+  struct item {
+    struct server_msg msg;
+    struct item* next_item;
+  } first_item;
+
+  first_item.next_item = NULL;
+
   int size = 0;
   struct server_msg message;
   while (size != -1){
-    size = msgrcv(que, &message, sizeof(message)-sizeof(long), -5, IPC_NOWAIT);
+    size = msgrcv(que, &message, sizeof(message)-sizeof(long), topic, IPC_NOWAIT);
+    wprintw(window, "odczytano %d", size);
+
     if (size != -1){
-      printw("%s\r\n", message.text);
+      //sort messages by priority (insertion sort)
+      struct item* curr_item = &first_item;
+      struct item* prev_item = NULL;
+      while(curr_item -> next_item != NULL && curr_item->msg.info < message.info){
+        prev_item = curr_item;
+        curr_item = curr_item -> next_item;
+      }
+      struct item new_item;
+      new_item.msg = message;
+      new_item.next_item = curr_item;
+
+      if (prev_item != NULL){
+        prev_item->next_item = &new_item;
+      }
+      else{ //it was the first item
+        first_item = new_item;
+      }
+      wprintw(window, "Dodana.");
     }
   }
+  //print all messages
+  struct item* curr_item = &first_item;
+  while(curr_item -> next_item != NULL){
+    print_long(window, 'i', curr_item->msg.text, " koniec\n\r");
+    curr_item = curr_item -> next_item;
+      // wprintw(window, "jest %s\n\r", message.text);
+    }
+  // }
   print_success(window, "Nie masz więcej nowych wiadomości.");
 }
 
@@ -206,7 +242,7 @@ int get_topics(int server, int id, int que, char topics[][TEXT_LEN]){
 
   struct server_msg message;
   do{
-    msgrcv(que, &message, sizeof(message)-sizeof(long), 6, 0);
+    msgrcv(que, &message, sizeof(message)-sizeof(long), 1, 0);
     strcpy(topics[nr_of_topics], message.text);
     nr_of_topics++;
   }while (strcmp(message.text, "") != 0);
@@ -310,7 +346,7 @@ void topic_menu(WINDOW* window, int server, int id, int que){
     register_topic(server, id, topic);
     clean_window(window, "NOWY TEMAT");
 
-    int feedback = take_feedback(que, 7);
+    int feedback = take_feedback(que, FEEDBACK_TYPE);
     if (feedback == 1){
       print_error(window, "Taki temat już istnieje\n\r");
     }
@@ -342,7 +378,7 @@ void sub_menu(WINDOW* window, int server, int id, int que){
       register_sub(server, id, topic, length);
       clean_window(window, "NOWA SUBSKRYBCJA");
 
-      int feedback = take_feedback(que, 7);
+      int feedback = take_feedback(que, FEEDBACK_TYPE);
       if (feedback == 1){     //shouldn't happen
         print_error(window, "Taki temat już nie istnieje.\n\r");
       }
@@ -381,7 +417,7 @@ void msg_menu(WINDOW* window, int server, int id, int que){
     send_msg(server, id, topic, msg, priority);
     clean_window(window, "NOWA WIADOMOŚĆ");
 
-    int feedback = take_feedback(que, 7);
+    int feedback = take_feedback(que, FEEDBACK_TYPE);
     if (feedback == 1){
       print_error(window, "Taki temat nie istnieje.\n\r");
     }
@@ -432,7 +468,7 @@ int main(int argc, char *argv[]) {
       case 0: topic_menu(left_win, server, nr_on_server, que); break;
       case 1: sub_menu(left_win, server, nr_on_server, que); break;
       case 2: msg_menu(left_win, server, nr_on_server, que); break;
-      case 3: receive_msg_sync(right_win, que);  break;
+      case 3: receive_msg_sync(right_win, que, 3);  break; //TODO: topic_nr
       case 4: receive_msg_async(right_win, &child_pid, que); break;
       case 5: shutdown(server); break;
       case 6: break;
