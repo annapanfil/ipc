@@ -13,11 +13,8 @@
 
 /*TODO:
 - kolory
-- brak enterów przy błędach? (p. sub menu <-1)
-- odbieranie w procesie potomnym: w pętli wszystkie tematy. Przekazywanie nowych poleceń przez pipe'a, kolejkę lub sygnały (da się?)
-- msg receive async - czas (XtAppAddTimeout(app,interval,do_stuff,data);, alarm)
 - sprawdzenie subskrybcji
-- zmiana nazw w sync
+- znikające okno
 */
 
 #define NAME_LENGTH 30
@@ -188,11 +185,11 @@ int receive_msg_sync(WINDOW* window, int que, int topic){
   struct item {
     struct server_msg msg;
     struct item* next_item;
-  } first_item;
+  } last_item;
 
-  first_item.next_item = NULL;
+  last_item.next_item = NULL;
 
-  struct item* iptr = &first_item;
+  struct item* first_ptr = &last_item;
 
   int size = 0;
   int msg_num = 0;
@@ -202,7 +199,7 @@ int receive_msg_sync(WINDOW* window, int que, int topic){
 
     if (size != -1){
       //sort messages by priority (insertion sort)
-      struct item* curr_item = iptr;
+      struct item* curr_item = first_ptr;
       struct item* prev_item = NULL;
       while(curr_item -> next_item != NULL && curr_item->msg.info < message.info){
         prev_item = curr_item;
@@ -217,14 +214,14 @@ int receive_msg_sync(WINDOW* window, int que, int topic){
         prev_item->next_item = new_item;
       }
       else{ //it was the first item
-        iptr = new_item;
+        first_ptr = new_item;
       }
       msg_num++;
     }
 
   }
   //print all messages
-  struct item* curr_item = iptr;
+  struct item* curr_item = first_ptr;
   struct item* prev_item = NULL;
   while(curr_item -> next_item != NULL){
     print_long(window, 'i', curr_item->msg.text, "\n\r");
@@ -433,8 +430,6 @@ void msg_menu(WINDOW* window, int server, int id, int que){
 }
 
 void receive_msg_sync_menu(WINDOW* menu_window, WINDOW* message_window, int server, int id, int que){
-  int length;
-
   char topics[TEXT_LEN][TEXT_LEN];
   int nr_of_topics = get_topics(server, id, que, topics); //TODO: tylko subskrybowane
   if (nr_of_topics > 0){
