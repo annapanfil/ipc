@@ -17,6 +17,7 @@
 - wybór tematu przy odbiorze
   - sprawdzenie subskrybcji
 - menu do msg_receive
+- zmiana nazw w sync
 */
 
 #define NAME_LENGTH 30
@@ -187,7 +188,7 @@ void receive_msg_async(WINDOW* window, int* pid, int que){
   }
 }
 
-void receive_msg_sync(WINDOW* window, int que, int topic){
+int receive_msg_sync(WINDOW* window, int que, int topic){
   struct item {
     struct server_msg msg;
     struct item* next_item;
@@ -198,9 +199,10 @@ void receive_msg_sync(WINDOW* window, int que, int topic){
   struct item* iptr = &first_item;
 
   int size = 0;
+  int msg_num = 0;
   struct server_msg message;
   while (size != -1){
-    size = msgrcv(que, &message, sizeof(message)-sizeof(long), topic, IPC_NOWAIT);
+    size = msgrcv(que, &message, sizeof(message)-sizeof(long), topic+3, IPC_NOWAIT);
 
     if (size != -1){
       //sort messages by priority (insertion sort)
@@ -220,8 +222,10 @@ void receive_msg_sync(WINDOW* window, int que, int topic){
       }
       else{ //it was the first item
         iptr = new_item;
+      }
+      msg_num++;
     }
-    }
+
   }
   //print all messages
   struct item* curr_item = iptr;
@@ -233,7 +237,7 @@ void receive_msg_sync(WINDOW* window, int que, int topic){
     if (prev_item != NULL)
       free(curr_item);
   }
-  print_success(window, "Nie masz więcej nowych wiadomości.");
+  return msg_num;
 }
 
 int get_topics(int server, int id, int que, char topics[][TEXT_LEN]){
@@ -433,6 +437,24 @@ void msg_menu(WINDOW* window, int server, int id, int que){
     close_window(window);
 }
 
+void receive_msg_sync_menu(WINDOW* menu_window, WINDOW* message_window, int server, int id, int que){
+  int length;
+
+  char topics[TEXT_LEN][TEXT_LEN];
+  int nr_of_topics = get_topics(server, id, que, topics); //TODO: tylko subskrybowane
+  if (nr_of_topics > 0){
+    int topic = gui_menu(menu_window, topics, nr_of_topics);
+    clean_window(menu_window, "Odbiór wiadomości");
+    if(receive_msg_sync(message_window, que, topic) > 0)
+      print_info(menu_window, "Zobacz nowe wiadomości w skrzynce →\n\r");
+    else
+      print_info(menu_window, "Nie masz więcej nowych wiadomości w tym temacie\n\r");
+  }
+  else
+    print_info(menu_window, "Nie subskrybujesz żadnego tematu\n\r");
+
+  close_window(menu_window);
+}
 
 int main(int argc, char *argv[]) {
   //initialise ncurses
@@ -471,7 +493,7 @@ int main(int argc, char *argv[]) {
       case 0: topic_menu(left_win, server, nr_on_server, que); break;
       case 1: sub_menu(left_win, server, nr_on_server, que); break;
       case 2: msg_menu(left_win, server, nr_on_server, que); break;
-      case 3: receive_msg_sync(right_win, que, 3);  break; //TODO: topic_nr
+      case 3: receive_msg_sync_menu(left_win, right_win, server, nr_on_server, que); break;
       case 4: receive_msg_async(right_win, &child_pid, que); break;
       case 5: shutdown(server); break;
       case 6: break;
