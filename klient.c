@@ -13,10 +13,9 @@
 /*TODO:
 - kolory
 - brak enterów przy błędach? (p. sub menu <-1)
-- sygnał dla procesu potomnego, nie zamykanie
-- wybór tematu przy odbiorze
-  - sprawdzenie subskrybcji
-- menu do msg_receive
+- odbieranie w procesie potomnym: w pętli wszystkie tematy. Przekazywanie nowych poleceń przez pipe'a, kolejkę lub sygnały (da się?)
+- msg receive async
+- sprawdzenie subskrybcji
 - zmiana nazw w sync
 */
 
@@ -179,12 +178,11 @@ void receive_msg_async(WINDOW* window, int* pid, int que){
       }
     }
     *pid = x;
-    print_success(window, "Włączono asynchroniczne odbieranie wiadomości");
+
   }
   else{  //odbierał → kończy odbieranie
     kill(*pid, 15);
     *pid = -1;
-    print_success(window, "Wyłączono asynchroniczne odbieranie wiadomości");
   }
 }
 
@@ -456,6 +454,40 @@ void receive_msg_sync_menu(WINDOW* menu_window, WINDOW* message_window, int serv
   close_window(menu_window);
 }
 
+int receive_msg_async_menu(WINDOW* window, int* topics_async, int topics_async_num, int server, int id, int que){
+  char topics[TEXT_LEN][TEXT_LEN];
+  int nr_of_topics = get_topics(server, id, que, topics); //TODO: tylko subskrybowane
+  if (nr_of_topics > 0){
+    int topic = gui_menu(window, topics, nr_of_topics);
+    clean_window(window, "Automatyczny odbiór wiadomości");
+    bool in_array = false;
+
+    for(int i=0; i<topics_async_num; i++){
+      if (*(topics_async + i) == topic){      //was in array
+        in_array = true;
+        topics_async_num--;
+        print_success(window, "Wyłączono asynchroniczne odbieranie wiadomości\n\r");
+        break;
+      }
+      if (in_array){  //move rest of the topics
+        *(topics_async + i) = *(topics_async+i+1);
+      }
+    }
+    if(!in_array){  //add to array
+        *(topics_async+topics_async_num) = topic;
+        topics_async_num++;
+        print_success(window, "Włączono asynchroniczne odbieranie wiadomości\n\r");
+    }
+  }
+  else
+    print_info(window, "Nie subskrybujesz żadnego tematu\n\r");
+
+  close_window(window);
+
+  return topics_async_num;
+}
+
+
 int main(int argc, char *argv[]) {
   //initialise ncurses
   setlocale(LC_ALL, "pl_PL.UTF-8");
@@ -479,10 +511,11 @@ int main(int argc, char *argv[]) {
   //initialise rest of the program
   int server = msgget(SERVER_QUE_NR, 0);
   int que = 0;
-  int child_pid = -1;
 
   int nr_on_server = login_menu(server, &que);
   int choice = -1;
+  int topics_async[100];           //ograniczona
+  int topics_async_num = 0;
 
   char menu[7][TEXT_LEN] = {"nowy temat", "zapis na subskrybcję", "nowa wiadomość", "odbierz wiadomości", "włącz/wyłącz automatyczne odbieranie wiadomości", "wyłącz system", "zakończ"};
 
@@ -494,11 +527,13 @@ int main(int argc, char *argv[]) {
       case 1: sub_menu(left_win, server, nr_on_server, que); break;
       case 2: msg_menu(left_win, server, nr_on_server, que); break;
       case 3: receive_msg_sync_menu(left_win, right_win, server, nr_on_server, que); break;
-      case 4: receive_msg_async(right_win, &child_pid, que); break;
+      case 4: topics_async_num = receive_msg_async_menu(left_win, topics_async, topics_async_num, server, nr_on_server, que); break;
       case 5: shutdown(server); break;
       case 6: break;
       default: print_error(left_win, "Niepoprawny wybór w menu głównym\n\r"); //shouldn't happen
     }
+    // receive_msg_async(right_win, topics_async, &topics_async_num);
+
   }while(choice != 5 && choice != 6);
 
 
@@ -511,7 +546,5 @@ int main(int argc, char *argv[]) {
   delwin(left_win);
   delwin(right_win);
   endwin();
-  if (child_pid != -1)
-    kill(child_pid, 15);
   return 0;
 }
