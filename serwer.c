@@ -200,7 +200,7 @@ void send_topics(struct client_msg *msg_from_client, struct topic* topics, int l
   struct server_msg message;
   message.type = 1;
   for (int i=0; i<= last_topic; i++){
-    strcpy(message.text, (topics + i)-> name);
+    sprintf(message.text, "%d. %s", i, topics[i].name);
     msgsnd(que, &message, sizeof(message)-sizeof(long), 0);
   }
   strcpy(message.text, "");
@@ -216,7 +216,7 @@ void send_subed_topics(struct client_msg *msg_from_client, struct topic* topics,
     while (sub != NULL){
       if (sub->client_que == que){
         printf("%s %d (%d) -> ", topics[i].name, sub->client_que, sub->length);
-        strcpy(message.text, topics[i].name);
+        sprintf(message.text, "%d. %s", i, topics[i].name);
         msgsnd(que, &message, sizeof(message)-sizeof(long), 0);
         break;
       }

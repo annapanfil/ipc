@@ -13,7 +13,6 @@
 
 /*TODO:
 - kolory
-- sprawdzenie subskrybcji
 - znikające okno
 */
 
@@ -336,7 +335,7 @@ void topic_menu(WINDOW* window, int server, int id, int que){
       print_long(window, 'i', topics[i], "\n");
     }
     else
-      print_info(window, "Na tym serwerze nie ma jeszcze żadnych tematów.");
+      print_info(window, "Na tym serwerze nie ma jeszcze żadnych tematów.\n\r");
 
     print_info(window,"Podaj nazwę nowego tematu: ");
     strcpy(topic, get_string_from_user(window, NAME_LENGTH));
@@ -360,10 +359,30 @@ void topic_menu(WINDOW* window, int server, int id, int que){
 void sub_menu(WINDOW* window, int server, int id, int que){
     int length;
 
-    char topics[TEXT_LEN][TEXT_LEN];
-    int nr_of_topics = get_topics(server, id, que, topics, false); //TODO: true też i różnica
-    if (nr_of_topics > 0){
-      int topic = gui_menu(window, topics, nr_of_topics);
+    char topics_all[TEXT_LEN][TEXT_LEN];
+    char topics_subed[TEXT_LEN][TEXT_LEN];
+    char topics_free[TEXT_LEN][TEXT_LEN];
+    int nr_of_topics_all = get_topics(server, id, que, topics_all, false);
+    int nr_of_topics_subed = get_topics(server, id, que, topics_subed, true);
+    int nr_of_topics_free = 0;
+    bool in_subed;
+    for(int i=0; i<nr_of_topics_all;i++){
+      in_subed = false;
+      for (int j=0; j<nr_of_topics_subed;j++){ //dalej już go nie będzie
+        if (strcmp(topics_all[i], topics_subed[j]) == 0){
+          in_subed = true;
+          break;
+        }
+      }
+      if (!in_subed){
+        strcpy(topics_free[nr_of_topics_free++], topics_all[i]);
+      }
+    }
+
+    if (nr_of_topics_free > 0){
+      int choice = gui_menu(window, topics_free, nr_of_topics_free); //TODO: numer na liście, nie nr tematu
+      int topic;
+      sscanf(topics_free[choice], "%d", &topic);
       clean_window(window, "NOWA SUBSKRYBCJA");
       print_info(window, "Ile wiadomości z tego tematu chcesz otrzymać? (-1 → wszystkie): ");
       length = get_int_from_user(window);
@@ -384,7 +403,7 @@ void sub_menu(WINDOW* window, int server, int id, int que){
         print_success(window, "Dodano subkrybcję.");
     }
     else
-      print_info(window, "Na tym serwerze nie ma żadnego tematu\n");
+      print_info(window, "Na tym serwerze nie ma tematów, których nie subskrybujesz\n");
 
     close_window(window);
 }
@@ -548,12 +567,12 @@ int main(int argc, char *argv[]) {
         case 1: sub_menu(left_win, server, nr_on_server, que); break;
         case 2: msg_menu(left_win, server, nr_on_server, que); break;
         case 3: receive_msg_sync_menu(left_win, right_win, server, nr_on_server, que); break;
-        case 4: kill(pid, SIGALRM); pause(); break;//TODO alrm
+        case 4: kill(pid, SIGALRM); pause(); break;
         case 5: shutdown(server); break;
         case 6: break;
         default: print_error(left_win, "Niepoprawny wybór w menu głównym\n\r"); //shouldn't happen
       }
-    }while( choice != 6); //choice != 5 &&
+    }while(choice != 5 && choice != 6);
 
 
     clear();
