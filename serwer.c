@@ -3,14 +3,8 @@
 //typ3 - zapis na subskrybcję
 //typ4 - nowa wiadomość
 //typ5 - odczyt tematów
-//typ6 - wyłączenie systemu
-
-//usuwanie wszystkich kolejek:
-// ipcs -q | tail -n +4 | tr -s " " | cut -d" " -f 2 | xargs -I\{\} ipcrm -q {}
-
-/*
-TODO: powtarzające się subskrybcje
-*/
+//typ6 - odczyt subskrybowanych tematów
+//typ7 - wyłączenie systemu
 
 #include <sys/types.h>
 #include <sys/ipc.h>
@@ -213,6 +207,26 @@ void send_topics(struct client_msg *msg_from_client, struct topic* topics, int l
   msgsnd(que, &message, sizeof(message)-sizeof(long), 0);
 }
 
+void send_subed_topics(struct client_msg *msg_from_client, struct topic* topics, int last_topic, struct client* clients){
+  int que = (clients + msg_from_client->id) -> que;
+  struct server_msg message;
+  message.type = 1;
+  for (int i=0; i<= last_topic; i++){
+    struct sub* sub = topics[i].first_sub;
+    while (sub != NULL){
+      if (sub->client_que == que){
+        printf("%s %d (%d) -> ", topics[i].name, sub->client_que, sub->length);
+        strcpy(message.text, topics[i].name);
+        msgsnd(que, &message, sizeof(message)-sizeof(long), 0);
+        break;
+      }
+      sub = sub->next_sub;
+    }
+  }
+  strcpy(message.text, "");
+  msgsnd(que, &message, sizeof(message)-sizeof(long), 0);
+}
+
 void shutdown(int me, struct client* clients, int last_client){
   printf("\e[0;36mⓘ Shutdown\e[m\n");
   for (int i=0; i<=last_client; i++){
@@ -238,9 +252,9 @@ int main(int argc, char *argv[]) {
   int info;
 
   while (running) {
-    // printf("\e[0;36mⓘ Waiting for message\e[m\n");
-    msgrcv(my_que, &message, sizeof(message)-sizeof(long), -6, 0);
-    // printf("\e[0;36mⓘ Received %ld\e[m\n", message.type);
+    printf("\e[0;36mⓘ Waiting for message\e[m\n");
+    msgrcv(my_que, &message, sizeof(message)-sizeof(long), -7, 0); //WARNING: only 7. Add if needed
+    printf("\e[0;36mⓘ Received %ld\e[m\n", message.type);
     switch (message.type) {
       case 1:
         info = login(&message, clients, &next_client);
@@ -250,7 +264,8 @@ int main(int argc, char *argv[]) {
       case 3: add_sub(&message, topics, next_topic-1, clients); break;
       case 4: send_msgs(&message, topics, next_topic-1, clients); break;
       case 5: send_topics(&message, topics, next_topic-1, clients); break;
-      case 6: shutdown(my_que, clients, next_client-1); running = false; break;
+      case 6: send_subed_topics(&message, topics, next_topic-1, clients); break;
+      case 7: shutdown(my_que, clients, next_client-1); running = false; break;
     }
   }
 

@@ -233,10 +233,10 @@ int receive_msg_sync(WINDOW* window, int que, int topic){
   return msg_num;
 }
 
-int get_topics(int server, int id, int que, char topics[][TEXT_LEN]){
+int get_topics(int server, int id, int que, char topics[][TEXT_LEN], bool subed_only){
   int nr_of_topics = 0;
   struct client_msg msg;
-  msg.type = 5;
+  msg.type = subed_only ? 6 : 5;
   msg.id = id;
   msgsnd(server, &msg, sizeof(msg)-sizeof(long), 0);
 
@@ -246,13 +246,12 @@ int get_topics(int server, int id, int que, char topics[][TEXT_LEN]){
     strcpy(topics[nr_of_topics], message.text);
     nr_of_topics++;
   }while (strcmp(message.text, "") != 0);
-  return nr_of_topics-1
-  ;
+  return nr_of_topics-1;
 }
 
 void shutdown(int server){
   struct client_msg message;
-  message.type = 6;
+  message.type = 7;
   msgsnd(server, &message, sizeof(message)-sizeof(long), 0);
 }
 
@@ -330,7 +329,7 @@ void topic_menu(WINDOW* window, int server, int id, int que){
     char topic[NAME_LENGTH] = "New topic";
 
     char topics[TEXT_LEN][TEXT_LEN];
-    int topics_nr = get_topics(server, id, que, topics);
+    int topics_nr = get_topics(server, id, que, topics, false);
     if(topics_nr > 0){
       print_info(window, "TEMATY NA SERWERZE:\n\r");
       for (int i=0; i<topics_nr; i++)
@@ -362,7 +361,7 @@ void sub_menu(WINDOW* window, int server, int id, int que){
     int length;
 
     char topics[TEXT_LEN][TEXT_LEN];
-    int nr_of_topics = get_topics(server, id, que, topics);
+    int nr_of_topics = get_topics(server, id, que, topics, false); //TODO: true też i różnica
     if (nr_of_topics > 0){
       int topic = gui_menu(window, topics, nr_of_topics);
       clean_window(window, "NOWA SUBSKRYBCJA");
@@ -395,7 +394,7 @@ void msg_menu(WINDOW* window, int server, int id, int que){
     int priority;
 
     char topics[TEXT_LEN][TEXT_LEN];
-    int nr_of_topics = get_topics(server, id, que, topics);
+    int nr_of_topics = get_topics(server, id, que, topics, false);
     if (nr_of_topics > 0){
       int topic = gui_menu(window, topics, nr_of_topics);
 
@@ -431,7 +430,7 @@ void msg_menu(WINDOW* window, int server, int id, int que){
 
 void receive_msg_sync_menu(WINDOW* menu_window, WINDOW* message_window, int server, int id, int que){
   char topics[TEXT_LEN][TEXT_LEN];
-  int nr_of_topics = get_topics(server, id, que, topics); //TODO: tylko subskrybowane
+  int nr_of_topics = get_topics(server, id, que, topics, true);
   if (nr_of_topics > 0){
     int topic = gui_menu(menu_window, topics, nr_of_topics);
     clean_window(menu_window, "Odbiór wiadomości");
@@ -448,7 +447,7 @@ void receive_msg_sync_menu(WINDOW* menu_window, WINDOW* message_window, int serv
 
 int receive_msg_async_menu(WINDOW* window, int* topics_async, int topics_async_num, int server, int id, int que){
   char topics[TEXT_LEN][TEXT_LEN];
-  int nr_of_topics = get_topics(server, id, que, topics); //TODO: tylko subskrybowane
+  int nr_of_topics = get_topics(server, id, que, topics, true);
   if (nr_of_topics > 0){
     int topic = gui_menu(window, topics, nr_of_topics);
     clean_window(window, "Automatyczny odbiór wiadomości");
@@ -554,7 +553,7 @@ int main(int argc, char *argv[]) {
         case 6: break;
         default: print_error(left_win, "Niepoprawny wybór w menu głównym\n\r"); //shouldn't happen
       }
-    }while(choice != 5 && choice != 6);
+    }while( choice != 6); //choice != 5 &&
 
 
     clear();
