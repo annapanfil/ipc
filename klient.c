@@ -21,7 +21,6 @@
 #define SERVER_QUE_NR 12345
 #define TEXT_LEN 100
 #define FEEDBACK_TYPE 2
-#define REFRESH_TIME 1
 
 struct client_msg{
   long type;
@@ -78,6 +77,7 @@ void print_long(WINDOW* window, char type, char text1[TEXT_LEN], char text2[NAME
 }
 
 void close_window(WINDOW* window){
+  print_info(window, "\n\r");
   print_info(window, "Naciśnij dowolny klawisz, by przejść do menu");
   wgetch(window);
 
@@ -166,7 +166,7 @@ void send_msg(int server, int id, int topic, char msg_text[MESSAGE_LENGTH], int 
   msgsnd(server, &message, sizeof(message)-sizeof(long), 0);
 }
 
-void receive_msg_async(WINDOW* window, int* topics, int topics_num, int que){
+void receive_msg_async(WINDOW* window, int* topics, int topics_num, int que, int* cursorx, int* cursory){
   struct server_msg message;
   int size;
   for(int i=0; i<topics_num; i++){
@@ -174,7 +174,9 @@ void receive_msg_async(WINDOW* window, int* topics, int topics_num, int que){
     do{
       size = msgrcv(que, &message, sizeof(message)-sizeof(long), *(topics+i)+3, IPC_NOWAIT);
       if(size != -1){
+        wmove(window, *cursory, *cursorx);
         print_long(window, 'i', message.text, "\n\r");
+        getyx(window, (*cursory), *cursorx);
       }
     }while (size != -1);
   }
@@ -403,7 +405,7 @@ void sub_menu(WINDOW* window, int server, int id, int que){
         print_success(window, "Dodano subkrybcję.");
     }
     else
-      print_info(window, "Na tym serwerze nie ma tematów, których nie subskrybujesz\n");
+      print_info(window, "Na tym serwerze nie ma już tematów, których nie subskrybujesz\n");
 
     close_window(window);
 }
@@ -415,7 +417,7 @@ void msg_menu(WINDOW* window, int server, int id, int que){
     char topics[TEXT_LEN][TEXT_LEN];
     int nr_of_topics = get_topics(server, id, que, topics, false);
     if (nr_of_topics > 0){
-      int topic = gui_menu(window, topics, nr_of_topics);
+      int topic = gui_menu(window, topics, nr_of_topics); //choice is topic, because there are all topics
 
     clean_window(window, "NOWA WIADOMOŚĆ");
     print_info(window, "Wpisz treść wiadomości:\n\r");
@@ -451,7 +453,8 @@ void receive_msg_sync_menu(WINDOW* menu_window, WINDOW* message_window, int serv
   char topics[TEXT_LEN][TEXT_LEN];
   int nr_of_topics = get_topics(server, id, que, topics, true);
   if (nr_of_topics > 0){
-    int topic = gui_menu(menu_window, topics, nr_of_topics);
+    int choice = gui_menu(menu_window, topics, nr_of_topics);
+    int topic; sscanf(topics[choice], "%d", &topic);
     clean_window(menu_window, "Odbiór wiadomości");
     if(receive_msg_sync(message_window, que, topic) > 0)
       print_info(menu_window, "Zobacz nowe wiadomości w skrzynce →\n\r");
@@ -468,12 +471,13 @@ int receive_msg_async_menu(WINDOW* window, int* topics_async, int topics_async_n
   char topics[TEXT_LEN][TEXT_LEN];
   int nr_of_topics = get_topics(server, id, que, topics, true);
   if (nr_of_topics > 0){
-    int topic = gui_menu(window, topics, nr_of_topics);
+    int choice = gui_menu(window, topics, nr_of_topics);
+    int topic; sscanf(topics[choice], "%d", &topic);
     clean_window(window, "Automatyczny odbiór wiadomości");
     bool in_array = false;
 
     for(int i=0; i<topics_async_num; i++){
-      if (*(topics_async + i) == topic){      //was in array
+      if (topics_async[i] == topic){      //was in array
         in_array = true;
         topics_async_num--;
         print_success(window, "WYŁĄCZONO asynchroniczne odbieranie wiadomości\n\r");
@@ -508,17 +512,21 @@ int child(WINDOW* left_win, WINDOW* right_win, int server, int id, int que){
   }
 
   signal(SIGALRM, on_alarm);
+
   int topics_async[100];           //WARNING: ograniczona
   int topics_async_num = 0;
   int parent = getppid();
+  int cursorx = 1;
+  int cursory = 1;
 
   while(1){
-    receive_msg_async(right_win, topics_async, topics_async_num, que);
+    receive_msg_async(right_win, topics_async, topics_async_num, que, &cursorx, &cursory);
     if (user_wants_something){
       topics_async_num = receive_msg_async_menu(left_win, topics_async, topics_async_num, server, id, que);
       user_wants_something = false;
       kill(parent, SIGALRM);
     }
+    // wrefresh(right_win);
   }
 }
 
@@ -530,11 +538,7 @@ int main(int argc, char *argv[]) {
   int terminal_width, terminal_height;
   getmaxyx (stdscr, terminal_height, terminal_width);
 
-  WINDOW* left_win = newwin(terminal_height-8, round(2*terminal_width/3)-8, 4, 4);
-  WINDOW* right_win = newwin(terminal_height-8, round(terminal_width/3)-8, 4, round(2*terminal_width/3)+4);
-  box(right_win, 0, 0);
-  mvwprintw(right_win, 0, 2, "TWOJE WIADOMOŚCI");
-  wmove(right_win, 1, 0);
+  WINDOW* left_win = newwin(terminal_height-4, round(2*terminal_width/3)-8, 2, 4);
 
   start_color();
   use_default_colors();
@@ -550,11 +554,21 @@ int main(int argc, char *argv[]) {
   int pid = -1;
 
   if((pid = fork()) == 0){
+    WINDOW* right_win = newwin((terminal_height/2)-3, round(terminal_width/3)-8, (terminal_height/2)+1, round(2*terminal_width/3)+4);
+    box(right_win, 0, 0);
+    mvwprintw(right_win, 0, 2, "TWOJE WIADOMOŚCI");
+    wmove(right_win, 1, 0);
+
     child(left_win, right_win, server, nr_on_server, que);
   }
   else{
     void on_alarm(){}
     signal(SIGALRM, on_alarm);
+
+    WINDOW* right_win = newwin((terminal_height/2)-3, round(terminal_width/3)-8, 2, round(2*terminal_width/3)+4);
+    box(right_win, 0, 0);
+    mvwprintw(right_win, 0, 2, "TWOJE WIADOMOŚCI");
+    wmove(right_win, 1, 0);
 
     int choice = -1;
     char menu[7][TEXT_LEN] = {"nowy temat", "zapis na subskrybcję", "nowa wiadomość", "odbierz wiadomości", "włącz/wyłącz automatyczne odbieranie wiadomości", "wyłącz system", "zakończ"};
@@ -577,7 +591,7 @@ int main(int argc, char *argv[]) {
 
     clear();
     refresh();
-    wmove(main_win, 8, 16);
+    wmove(main_win, 8, terminal_width/3);
     print_info(main_win, "Do widzenia!\n");
     getchar();
     use_default_colors();
