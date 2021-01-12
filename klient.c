@@ -14,6 +14,8 @@
 /*TODO:
 - kolory
 - znikające okno
+- wiadomości automatyczne nie w tym oknie (wyślij jedną, przesuń się w menu, wyślij drugą)
+- odbiór wiadomości z subskrybcji, które wygasły
 */
 
 #define NAME_LENGTH 30
@@ -174,9 +176,23 @@ void receive_msg_async(WINDOW* window, int* topics, int topics_num, int que, int
     do{
       size = msgrcv(que, &message, sizeof(message)-sizeof(long), *(topics+i)+3, IPC_NOWAIT);
       if(size != -1){
-        wmove(window, *cursory, *cursorx);
+        if (wmove(window, *cursory, *cursorx)==ERR){
+          print_error(window, "!!!NIE PRZESUNĄŁ!!!!!");
+        }
+        // wmove(window, 1, 1);
         print_long(window, 'i', message.text, "\n\r");
-        getyx(window, (*cursory), *cursorx);
+        int y, x;
+        getyx(window, y, x);
+        if(y == -1 || x == -1){
+            print_error(window, "!!!!NIE POBRAŁ WSPÓŁRZĘDNYCH!!!");
+        }
+        else{
+          char msg[12];
+          sprintf(msg,"y, x: %d %d", y, x); //jak tego nie ma, to następna wiadomość pojawia się w głównym oknie (kursor się nie przesuwa) Czemu? Nie mam pojęcia.
+          print_info(window, msg);
+        }
+        *cursorx = x;
+        *cursory = y;
       }
     }while (size != -1);
   }
@@ -256,6 +272,7 @@ void shutdown(int server){
   msgsnd(server, &message, sizeof(message)-sizeof(long), 0);
 }
 
+
 int gui_menu(WINDOW* menu_win, char options[][TEXT_LEN], int options_nr){
   box(menu_win, 0, 0);
   noecho();
@@ -301,9 +318,9 @@ int login_menu(int server, int* que){
   int nr_on_server = -1;
   char name[NAME_LENGTH] = "Obi wan";
 
+  print_info(login_win, "Dzień dobry!\n\r");
+  print_info(login_win, "Podaj swoją nazwę użytkownika: ");
   while (nr_on_server < 0){
-    print_info(login_win, "Dzień dobry!\n\r");
-    print_info(login_win, "Podaj swoją nazwę użytkownika: ");
     strcpy(name, get_string_from_user(login_win, NAME_LENGTH));
 
     clean_window(login_win, "LOGOWANIE");
@@ -316,6 +333,10 @@ int login_menu(int server, int* que){
     else if(nr_on_server == -2){
       print_error(login_win, "Na tym serwerze jest zbyt wielu klientów. Nie możesz się zalogować\n\r");
       msgctl(*que, IPC_RMID, NULL);
+      clear();
+      refresh();
+      use_default_colors();
+      endwin();
       exit(0);
     }
     else if(nr_on_server >= 0)
@@ -404,8 +425,10 @@ void sub_menu(WINDOW* window, int server, int id, int que){
       else if(feedback == 0)
         print_success(window, "Dodano subkrybcję.");
     }
-    else
+    else{
+      clean_window(window, "NOWA SUBSKRYBCJA");
       print_info(window, "Na tym serwerze nie ma już tematów, których nie subskrybujesz\n");
+    }
 
     close_window(window);
 }
@@ -491,10 +514,6 @@ int receive_msg_async_menu(WINDOW* window, int* topics_async, int topics_async_n
         topics_async_num++;
         print_success(window, "Włączono asynchroniczne odbieranie wiadomości\n\r");
     }
-    for(int i=0; i<topics_async_num; i++){
-      wprintw(window, "%d\n\r", *(topics_async + i));
-      wrefresh(window);
-    }
   }
   else
     print_info(window, "Nie subskrybujesz żadnego tematu\n\r");
@@ -503,6 +522,7 @@ int receive_msg_async_menu(WINDOW* window, int* topics_async, int topics_async_n
 
   return topics_async_num;
 }
+
 
 int child(WINDOW* left_win, WINDOW* right_win, int server, int id, int que){
   bool user_wants_something = false;
@@ -516,8 +536,8 @@ int child(WINDOW* left_win, WINDOW* right_win, int server, int id, int que){
   int topics_async[100];           //WARNING: ograniczona
   int topics_async_num = 0;
   int parent = getppid();
-  int cursorx = 1;
   int cursory = 1;
+  int cursorx = 1;
 
   while(1){
     receive_msg_async(right_win, topics_async, topics_async_num, que, &cursorx, &cursory);
@@ -530,6 +550,7 @@ int child(WINDOW* left_win, WINDOW* right_win, int server, int id, int que){
   }
 }
 
+
 int main(int argc, char *argv[]) {
   //initialise ncurses
   setlocale(LC_ALL, "pl_PL.UTF-8");
@@ -537,8 +558,6 @@ int main(int argc, char *argv[]) {
   echo();
   int terminal_width, terminal_height;
   getmaxyx (stdscr, terminal_height, terminal_width);
-
-  WINDOW* left_win = newwin(terminal_height-4, round(2*terminal_width/3)-8, 2, 4);
 
   start_color();
   use_default_colors();
@@ -552,6 +571,8 @@ int main(int argc, char *argv[]) {
 
   int nr_on_server = login_menu(server, &que);
   int pid = -1;
+
+  WINDOW* left_win = newwin(terminal_height-4, round(2*terminal_width/3)-8, 2, 4);
 
   if((pid = fork()) == 0){
     WINDOW* right_win = newwin((terminal_height/2)-3, round(terminal_width/3)-8, (terminal_height/2)+1, round(2*terminal_width/3)+4);

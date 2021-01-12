@@ -70,7 +70,7 @@ void print_subs(struct topic* topic){
 
 
 int login(struct client_msg *message, struct client* clients, int* client_nr){
-  printf("\e[0;36mⓘ Login\e[m\n");
+  // printf("\e[0;36mⓘ Login\e[m\n");
 
   if (*client_nr >= CLIENTS_NR){
     return -2;  //limit klientów przekroczony
@@ -97,7 +97,7 @@ int login(struct client_msg *message, struct client* clients, int* client_nr){
 
 
 void add_topic(struct client_msg *message, struct topic* topics, int* topic_nr, struct client* clients){
-  printf("\e[0;36mⓘ Add topic\e[m\n");
+  // printf("\e[0;36mⓘ Add topic\e[m\n");
   if (*topic_nr >= TOPICS_NR){
     send_feedback((clients+message->id)->que, 2, 2);  //limit tematów przekroczony
     return;
@@ -125,7 +125,7 @@ void add_topic(struct client_msg *message, struct topic* topics, int* topic_nr, 
 }
 
 void add_sub(struct client_msg *message, struct topic* topics, int last_topic, struct client* clients){
-  printf("\e[0;36mⓘ Add_sub\e[m\n");
+  // printf("\e[0;36mⓘ Add_sub\e[m\n");
 
   // print_subs(topics + message->topic);
   struct sub* new_sub;
@@ -164,7 +164,7 @@ void decrement_sub_length(struct sub* sub, struct sub* prev_sub, struct topic* t
 }
 
 void send_msgs(struct client_msg *msg_from_client, struct topic* topics, int last_topic, struct client* clients){
-  printf("\e[0;36mⓘ Send messages\e[m\n");
+  // printf("\e[0;36mⓘ Send messages\e[m\n");
 
   if ((msg_from_client->topic) > last_topic){
     send_feedback((clients+msg_from_client->id)->que, 2, 1);  //temat nie istnieje
@@ -215,7 +215,6 @@ void send_subed_topics(struct client_msg *msg_from_client, struct topic* topics,
     struct sub* sub = topics[i].first_sub;
     while (sub != NULL){
       if (sub->client_que == que){
-        printf("%s %d (%d) -> ", topics[i].name, sub->client_que, sub->length);
         sprintf(message.text, "%d. %s", i, topics[i].name);
         msgsnd(que, &message, sizeof(message)-sizeof(long), 0);
         break;
@@ -228,7 +227,7 @@ void send_subed_topics(struct client_msg *msg_from_client, struct topic* topics,
 }
 
 void shutdown(int me, struct client* clients, int last_client){
-  printf("\e[0;36mⓘ Shutdown\e[m\n");
+  // printf("\e[0;36mⓘ Shutdown\e[m\n");
   for (int i=0; i<=last_client; i++){
     msgctl((clients+i)->que, IPC_RMID, NULL);
     printf("Goodbye %s\n", (clients+i)->name);
@@ -252,9 +251,9 @@ int main(int argc, char *argv[]) {
   int info;
 
   while (running) {
-    printf("\e[0;36mⓘ Waiting for message\e[m\n");
+    // printf("\e[0;36mⓘ Waiting for message\e[m\n");
     msgrcv(my_que, &message, sizeof(message)-sizeof(long), -7, 0); //WARNING: only 7. Add if needed
-    printf("\e[0;36mⓘ Received %ld\e[m\n", message.type);
+    // printf("\e[0;36mⓘ Received %ld\e[m\n", message.type);
     switch (message.type) {
       case 1:
         info = login(&message, clients, &next_client);
