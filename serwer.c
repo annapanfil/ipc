@@ -148,10 +148,16 @@ void add_sub(struct client_msg *message, struct topic* topics, int last_topic, s
   send_feedback(new_sub->client_que, 2, 0);
 }
 
-void decrement_sub_length(struct sub* sub, struct sub* prev_sub, struct topic* topic){
+void decrement_sub_length(struct sub* sub, struct sub* prev_sub, struct topic* topic, int que){
   if(sub->length != -1){
     sub->length -= 1;
     if (sub->length == 0){ // sub to remove
+
+      struct server_msg msg;  //send msg to client – subscribtion ended
+      msg.type = 3;
+      sprintf(msg.text, "%d. %s", topic->id, topic->name);
+      msgsnd(sub->client_que, &msg, sizeof(msg)-sizeof(long), 0);
+
       if (prev_sub != NULL){
         prev_sub -> next_sub = sub -> next_sub;
       }
@@ -173,11 +179,10 @@ void send_msgs(struct client_msg *msg_from_client, struct topic* topics, int las
   else{
     send_feedback((clients+msg_from_client->id)->que, 2, 0);  //OK
 
-    // print_subs(topics + (msg_from_client->topic));
     struct sub* sub = (topics + (msg_from_client->topic)) -> first_sub;
     struct sub* prev_sub = NULL;
     struct server_msg msg;
-    msg.type = msg_from_client->topic + 3;
+    msg.type = msg_from_client->topic + 4;
     msg.info = msg_from_client->number;
     sprintf(msg.text, "%s: %s", (topics + (msg_from_client->topic))->name, msg_from_client->text);
 
@@ -185,14 +190,13 @@ void send_msgs(struct client_msg *msg_from_client, struct topic* topics, int las
     while (sub != NULL){
       if (sub->client_que != (clients+msg_from_client->id)->que){ //nie odsyłaj do nadawcy
         msgsnd(sub->client_que, &msg, sizeof(msg)-sizeof(long), 0);
-        decrement_sub_length(sub, prev_sub, topics + (msg_from_client->topic));
+        decrement_sub_length(sub, prev_sub, topics + (msg_from_client->topic), (clients+msg_from_client->id)->que);
       }
 
       prev_sub = sub;
       sub = sub->next_sub;
     }
   }
-  // print_subs(topics + (msg_from_client->topic));
 }
 
 void send_topics(struct client_msg *msg_from_client, struct topic* topics, int last_topic, struct client* clients){

@@ -22,6 +22,7 @@
 #define MESSAGE_LENGTH 1024
 #define SERVER_QUE_NR 12345
 #define TEXT_LEN 100
+#define TOPICS_NUM 20
 #define FEEDBACK_TYPE 2
 
 struct client_msg{
@@ -141,10 +142,11 @@ int login(int server, int* que, char name[NAME_LENGTH]){
   return que_key;
 }
 
-void register_topic(int server, int id, char topic_name[NAME_LENGTH]){
+void register_topic(int server, int id, char topic_name[NAME_LENGTH], int topic_nr){
   struct client_msg topic_msg;
   topic_msg.type = 2;
   topic_msg.id = id;
+  topic_msg.number = topic_nr;
   strcpy(topic_msg.text, topic_name);
   msgsnd(server, &topic_msg, sizeof(topic_msg)-sizeof(long), 0);
 }
@@ -174,7 +176,7 @@ void receive_msg_async(WINDOW* window, int* topics, int topics_num, int que, int
   for(int i=0; i<topics_num; i++){
     size=0;
     do{
-      size = msgrcv(que, &message, sizeof(message)-sizeof(long), *(topics+i)+3, IPC_NOWAIT);
+      size = msgrcv(que, &message, sizeof(message)-sizeof(long), *(topics+i)+4, IPC_NOWAIT);
       if(size != -1){
         if (wmove(window, *cursory, *cursorx)==ERR){
           print_error(window, "!!!NIE PRZESUNĄŁ!!!!!");
@@ -212,7 +214,7 @@ int receive_msg_sync(WINDOW* window, int que, int topic){
   int msg_num = 0;
   struct server_msg message;
   while (size != -1){
-    size = msgrcv(que, &message, sizeof(message)-sizeof(long), topic+3, IPC_NOWAIT);
+    size = msgrcv(que, &message, sizeof(message)-sizeof(long), topic+4, IPC_NOWAIT);
 
     if (size != -1){
       //sort messages by priority (insertion sort)
@@ -264,6 +266,18 @@ int get_topics(int server, int id, int que, char topics[][TEXT_LEN], bool subed_
     nr_of_topics++;
   }while (strcmp(message.text, "") != 0);
   return nr_of_topics-1;
+}
+
+int get_zombie_subs(int que, char topics[][TEXT_LEN], int nr_of_topics){
+  struct server_msg message;
+  int size;
+  do{
+    size = msgrcv(que, &message, sizeof(message)-sizeof(long), 3, IPC_NOWAIT);
+    if(size != -1){
+      strcpy(topics[nr_of_topics++], message.text);
+    }
+  }while (size != -1);
+  return nr_of_topics;
 }
 
 void shutdown(int server){
@@ -363,7 +377,7 @@ void topic_menu(WINDOW* window, int server, int id, int que){
     print_info(window,"Podaj nazwę nowego tematu: ");
     strcpy(topic, get_string_from_user(window, NAME_LENGTH));
 
-    register_topic(server, id, topic);
+    register_topic(server, id, topic, topics_nr);
     clean_window(window, "NOWY TEMAT");
 
     int feedback = take_feedback(que, FEEDBACK_TYPE);
@@ -403,9 +417,8 @@ void sub_menu(WINDOW* window, int server, int id, int que){
     }
 
     if (nr_of_topics_free > 0){
-      int choice = gui_menu(window, topics_free, nr_of_topics_free); //TODO: numer na liście, nie nr tematu
-      int topic;
-      sscanf(topics_free[choice], "%d", &topic);
+      int choice = gui_menu(window, topics_free, nr_of_topics_free);
+      int topic; sscanf(topics_free[choice], "%d", &topic);
       clean_window(window, "NOWA SUBSKRYBCJA");
       print_info(window, "Ile wiadomości z tego tematu chcesz otrzymać? (-1 → wszystkie): ");
       length = get_int_from_user(window);
@@ -472,22 +485,45 @@ void msg_menu(WINDOW* window, int server, int id, int que){
     close_window(window);
 }
 
-void receive_msg_sync_menu(WINDOW* menu_window, WINDOW* message_window, int server, int id, int que){
-  char topics[TEXT_LEN][TEXT_LEN];
-  int nr_of_topics = get_topics(server, id, que, topics, true);
-  if (nr_of_topics > 0){
-    int choice = gui_menu(menu_window, topics, nr_of_topics);
-    int topic; sscanf(topics[choice], "%d", &topic);
+int receive_msg_sync_menu(WINDOW* menu_window, WINDOW* message_window, int server, int id, int que, char zombie_subs[][TEXT_LEN], int zombie_subs_num){
+  char topics[TOPICS_NUM][TEXT_LEN];
+  int topics_num = get_topics(server, id, que, topics, true);
+  zombie_subs_num = get_zombie_subs(que, zombie_subs, zombie_subs_num);
+
+  char all_topics[TOPICS_NUM][TEXT_LEN];
+  int all_topics_num = 0;
+  for(int i=0; i<topics_num; i++){
+    strcpy(all_topics[all_topics_num++], topics[i]);
+  }
+  for(int i=0; i<zombie_subs_num; i++){
+    strcpy(all_topics[all_topics_num++], zombie_subs[i]);
+  }
+
+  if (all_topics_num > 0){
+    int choice = gui_menu(menu_window, all_topics, all_topics_num);
+    int topic; sscanf(all_topics[choice], "%d", &topic);
     clean_window(menu_window, "Odbiór wiadomości");
     if(receive_msg_sync(message_window, que, topic) > 0)
       print_info(menu_window, "Zobacz nowe wiadomości w skrzynce →\n\r");
     else
       print_info(menu_window, "Nie masz więcej nowych wiadomości w tym temacie\n\r");
+
+    bool is_zombie;
+    for(int i=0; i<zombie_subs_num; i++){
+      if (strcmp(zombie_subs[i], all_topics[choice])==0){      //was zombie – delete from zombie list
+        is_zombie = true;
+        zombie_subs_num--;
+      }
+      if (is_zombie){  //move rest of the topics
+        strcpy(zombie_subs[i], zombie_subs[i+1]);
+      }
+    }
   }
   else
     print_info(menu_window, "Nie subskrybujesz żadnego tematu\n\r");
 
   close_window(menu_window);
+  return zombie_subs_num;
 }
 
 int receive_msg_async_menu(WINDOW* window, int* topics_async, int topics_async_num, int server, int id, int que){
@@ -593,6 +629,8 @@ int main(int argc, char *argv[]) {
 
     int choice = -1;
     char menu[7][TEXT_LEN] = {"nowy temat", "zapis na subskrybcję", "nowa wiadomość", "odbierz wiadomości", "włącz/wyłącz automatyczne odbieranie wiadomości", "wyłącz system", "zakończ"};
+    char zombie_subs[TOPICS_NUM][TEXT_LEN];
+    int zombie_subs_num = 0;
 
     do{
       choice = gui_menu(left_win, menu, 7);
@@ -601,7 +639,7 @@ int main(int argc, char *argv[]) {
         case 0: topic_menu(left_win, server, nr_on_server, que); break;
         case 1: sub_menu(left_win, server, nr_on_server, que); break;
         case 2: msg_menu(left_win, server, nr_on_server, que); break;
-        case 3: receive_msg_sync_menu(left_win, right_win, server, nr_on_server, que); break;
+        case 3: zombie_subs_num = receive_msg_sync_menu(left_win, right_win, server, nr_on_server, que, zombie_subs, zombie_subs_num); break;
         case 4: kill(pid, SIGALRM); pause(); break;
         case 5: shutdown(server); break;
         case 6: break;
