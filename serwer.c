@@ -228,8 +228,6 @@ void shutdown(int me, struct client* clients, int last_client){
 
   msgctl(me, IPC_RMID, NULL);
   printf("Goodbye!\n");
-  
-  //Czy tu powinnam jeszcze zwolnić pamięć z list subskrybcji?
 }
 
 

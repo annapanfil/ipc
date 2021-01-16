@@ -4,17 +4,12 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdbool.h> //bool
+#include <stdbool.h>
 #include <unistd.h>
-#include <signal.h> //kill
+#include <signal.h>
 #include <locale.h>
 #include <ncursesw/ncurses.h>
-#include <math.h> //round
-
-/*TODO:
-- kolory (chyba nie zadziałają)
-- okno potomka przesłaniane przez rodzica
-*/
+#include <math.h>
 
 #define NAME_LENGTH 30
 #define MESSAGE_LENGTH 1024
