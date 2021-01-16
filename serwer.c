@@ -1,11 +1,3 @@
-//typ1 - logowanie
-//typ2 - nowy temat
-//typ3 - zapis na subskrybcję
-//typ4 - nowa wiadomość
-//typ5 - odczyt tematów
-//typ6 - odczyt subskrybowanych tematów
-//typ7 - wyłączenie systemu
-
 #include <sys/types.h>
 #include <sys/ipc.h>
 #include <sys/msg.h>
@@ -17,7 +9,7 @@
 #define NAME_LENGTH 30
 #define MESSAGE_LENGTH 1024
 #define TOPICS_NR 20
-#define CLIENTS_NR 15
+#define CLIENTS_NR 20
 #define SERVER_QUE_NR 12345
 
 
@@ -73,7 +65,7 @@ int login(struct client_msg *message, struct client* clients, int* client_nr){
   // printf("\e[0;36mⓘ Login\e[m\n");
 
   if (*client_nr >= CLIENTS_NR){
-    return -2;  //limit klientów przekroczony
+    return -2;  //too many clients
   }
   else{
     struct client client;
@@ -83,7 +75,7 @@ int login(struct client_msg *message, struct client* clients, int* client_nr){
 
     for (int i=0; i<*client_nr; i++){
       if (strcmp((clients+i)->name, client.name) == 0){
-        return -1;  //nazwa klienta się powtarza
+        return -1;  //existing username
       }
     }
 
@@ -92,14 +84,14 @@ int login(struct client_msg *message, struct client* clients, int* client_nr){
     return *client_nr-1;
   }
 
-  //UWAGA – teoretycznie 1 klient może się zalogować pod 2 różnymi nazwami – blokada po stronie klienta
+  //UWAGA – teoretycznie 1 klient może się zalogować pod 2 różnymi nazwami – blokada jest po stronie klienta
 }
 
 
 void add_topic(struct client_msg *message, struct topic* topics, int* topic_nr, struct client* clients){
   // printf("\e[0;36mⓘ Add topic\e[m\n");
   if (*topic_nr >= TOPICS_NR){
-    send_feedback((clients+message->id)->que, 2, 2);  //limit tematów przekroczony
+    send_feedback((clients+message->id)->que, 2, 2);  //too many topics
     return;
   }
   else{
@@ -109,7 +101,7 @@ void add_topic(struct client_msg *message, struct topic* topics, int* topic_nr, 
 
     for (int i=0; i<*topic_nr; i++){
       if (strcmp((topics+i)->name, topic.name) == 0){
-        send_feedback((clients+message->id)->que, 2, 1);  //nazwa tematu się powtarza
+        send_feedback((clients+message->id)->que, 2, 1);  //existing name of topic
         return;
       }
     }
@@ -118,8 +110,7 @@ void add_topic(struct client_msg *message, struct topic* topics, int* topic_nr, 
     *(topics+*topic_nr) = topic;
 
     printf("New topic: %s\n", topic.name);
-    // printf("id: %d\nclient que: %d\n", message->id, (clients+message->id)->que);
-    send_feedback((clients+message->id)->que, 2, 0); //wszystko OK
+    send_feedback((clients+message->id)->que, 2, 0); //OK
     *topic_nr = *topic_nr+1;
   }
 }
@@ -127,24 +118,22 @@ void add_topic(struct client_msg *message, struct topic* topics, int* topic_nr, 
 void add_sub(struct client_msg *message, struct topic* topics, int last_topic, struct client* clients){
   // printf("\e[0;36mⓘ Add_sub\e[m\n");
 
-  // print_subs(topics + message->topic);
   struct sub* new_sub;
   new_sub = (struct sub*)malloc(sizeof(struct sub));
   new_sub->client_que = (clients+message->id)->que;
   new_sub->length = message->number;
 
   if (message->topic > last_topic){
-    send_feedback(new_sub->client_que, 2, 1); //temat nie istnieje
+    send_feedback(new_sub->client_que, 2, 1); //topic doesn't exist
     return;
   }
 
   struct topic* topic = (topics + message->topic);
 
-  //wstawiamy na początek listy
+  //insert at the beginning of the list
   new_sub->next_sub = topic->first_sub;
   topic->first_sub = new_sub;
 
-  // print_subs(topics + message->topic);
   send_feedback(new_sub->client_que, 2, 0);
 }
 
@@ -161,7 +150,7 @@ void decrement_sub_length(struct sub* sub, struct sub* prev_sub, struct topic* t
       if (prev_sub != NULL){
         prev_sub -> next_sub = sub -> next_sub;
       }
-      else{ //it was first sub
+      else{ //it was the first sub
         topic -> first_sub = sub -> next_sub;
       }
       free(sub);
@@ -173,7 +162,7 @@ void send_msgs(struct client_msg *msg_from_client, struct topic* topics, int las
   // printf("\e[0;36mⓘ Send messages\e[m\n");
 
   if ((msg_from_client->topic) > last_topic){
-    send_feedback((clients+msg_from_client->id)->que, 2, 1);  //temat nie istnieje
+    send_feedback((clients+msg_from_client->id)->que, 2, 1);  //topic doesn't exist
     return;
   }
   else{
@@ -188,7 +177,7 @@ void send_msgs(struct client_msg *msg_from_client, struct topic* topics, int las
 
     //send messages to all subscribents
     while (sub != NULL){
-      if (sub->client_que != (clients+msg_from_client->id)->que){ //nie odsyłaj do nadawcy
+      if (sub->client_que != (clients+msg_from_client->id)->que){ //don't resend to sender
         msgsnd(sub->client_que, &msg, sizeof(msg)-sizeof(long), 0);
         decrement_sub_length(sub, prev_sub, topics + (msg_from_client->topic), (clients+msg_from_client->id)->que);
       }
@@ -239,7 +228,7 @@ void shutdown(int me, struct client* clients, int last_client){
 
   msgctl(me, IPC_RMID, NULL);
   printf("Goodbye!\n");
-
+  
   //Czy tu powinnam jeszcze zwolnić pamięć z list subskrybcji?
 }
 

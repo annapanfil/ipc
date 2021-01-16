@@ -12,10 +12,8 @@
 #include <math.h> //round
 
 /*TODO:
-- kolory
-- znikające okno
-- wiadomości automatyczne nie w tym oknie (wyślij jedną, przesuń się w menu, wyślij drugą)
-- odbiór wiadomości z subskrybcji, które wygasły
+- kolory (chyba nie zadziałają)
+- okno potomka przesłaniane przez rodzica
 */
 
 #define NAME_LENGTH 30
@@ -98,10 +96,10 @@ void clean_window(WINDOW* window, char* title){
 
 
 int get_int_from_user(WINDOW* window){
-  char text[10];
+  char text[5];
   int number;
   while(1){
-    wgetnstr(window, text, sizeof(text));  //zabezbieczyć długość
+    wgetnstr(window, text, sizeof(int));
     if(sscanf(text, "%d", &number) == 1){
       return number;
     }
@@ -116,7 +114,7 @@ char* get_string_from_user(WINDOW* window, int length){
   char* text = malloc(length);
   do{
     wgetnstr(window, text, length);
-    if (strcmp(text, "") == 0){ //są równe
+    if (strcmp(text, "") == 0){
       clean_window(window, "BŁĄD");
       print_error(window, "To pole nie może być puste. Spróbuj jeszcze raz: ");
     }
@@ -178,21 +176,14 @@ void receive_msg_async(WINDOW* window, int* topics, int topics_num, int que, int
     do{
       size = msgrcv(que, &message, sizeof(message)-sizeof(long), *(topics+i)+4, IPC_NOWAIT);
       if(size != -1){
-        if (wmove(window, *cursory, *cursorx)==ERR){
-          print_error(window, "!!!NIE PRZESUNĄŁ!!!!!");
+        box(window, 0, 0);
+        if (wmove(window, *cursory, *cursorx+1)==ERR){
+          print_error(window, "Nie przesunął kursora!");
         }
-        // wmove(window, 1, 1);
-        print_long(window, 'i', message.text, "\n\r");
+        wprintw(window,"%s \n\r", message.text);
+        wrefresh(window);
         int y, x;
         getyx(window, y, x);
-        if(y == -1 || x == -1){
-            print_error(window, "!!!!NIE POBRAŁ WSPÓŁRZĘDNYCH!!!");
-        }
-        else{
-          char msg[12];
-          sprintf(msg,"y, x: %d %d", y, x); //jak tego nie ma, to następna wiadomość pojawia się w głównym oknie (kursor się nie przesuwa) Czemu? Nie mam pojęcia.
-          print_info(window, msg);
-        }
         *cursorx = x;
         *cursory = y;
       }
@@ -269,6 +260,7 @@ int get_topics(int server, int id, int que, char topics[][TEXT_LEN], bool subed_
 }
 
 int get_zombie_subs(int que, char topics[][TEXT_LEN], int nr_of_topics){
+  //zombie subs – their time of subscribtion passed, but messages still haven't been read
   struct server_msg message;
   int size;
   do{
@@ -331,7 +323,6 @@ int login_menu(int server, int* que){
 
   int nr_on_server = -1;
   char name[NAME_LENGTH] = "Obi wan";
-
   print_info(login_win, "Dzień dobry!\n\r");
   print_info(login_win, "Podaj swoją nazwę użytkownika: ");
   while (nr_on_server < 0){
@@ -405,7 +396,7 @@ void sub_menu(WINDOW* window, int server, int id, int que){
     bool in_subed;
     for(int i=0; i<nr_of_topics_all;i++){
       in_subed = false;
-      for (int j=0; j<nr_of_topics_subed;j++){ //dalej już go nie będzie
+      for (int j=0; j<nr_of_topics_subed;j++){
         if (strcmp(topics_all[i], topics_subed[j]) == 0){
           in_subed = true;
           break;
@@ -453,7 +444,7 @@ void msg_menu(WINDOW* window, int server, int id, int que){
     char topics[TEXT_LEN][TEXT_LEN];
     int nr_of_topics = get_topics(server, id, que, topics, false);
     if (nr_of_topics > 0){
-      int topic = gui_menu(window, topics, nr_of_topics); //choice is topic, because there are all topics
+      int topic = gui_menu(window, topics, nr_of_topics); //choice is topic, because there are all topics sorted on the list
 
     clean_window(window, "NOWA WIADOMOŚĆ");
     print_info(window, "Wpisz treść wiadomości:\n\r");
@@ -560,20 +551,28 @@ int receive_msg_async_menu(WINDOW* window, int* topics_async, int topics_async_n
 }
 
 
-int child(WINDOW* left_win, WINDOW* right_win, int server, int id, int que){
+int child(WINDOW* left_win, int server, int id, int que){
   bool user_wants_something = false;
-  void on_alarm() //user wants something
+  void on_alarm()
   {
     user_wants_something = true;
   }
 
   signal(SIGALRM, on_alarm);
 
-  int topics_async[100];           //WARNING: ograniczona
+  int terminal_width, terminal_height;
+  getmaxyx (stdscr, terminal_height, terminal_width);
+
+  WINDOW* right_win = newwin((terminal_height/2)-3, round(terminal_width/3)-8, (terminal_height/2)+1, round(2*terminal_width/3)+4);
+  box(right_win, 0, 0);
+  mvwprintw(right_win, 0, 2, "TWOJE WIADOMOŚCI");
+  wmove(right_win, 1, 0);
+
+  int topics_async[TOPICS_NUM];
   int topics_async_num = 0;
   int parent = getppid();
   int cursory = 1;
-  int cursorx = 1;
+  int cursorx = 0;
 
   while(1){
     receive_msg_async(right_win, topics_async, topics_async_num, que, &cursorx, &cursory);
@@ -582,7 +581,6 @@ int child(WINDOW* left_win, WINDOW* right_win, int server, int id, int que){
       user_wants_something = false;
       kill(parent, SIGALRM);
     }
-    // wrefresh(right_win);
   }
 }
 
@@ -611,12 +609,7 @@ int main(int argc, char *argv[]) {
   WINDOW* left_win = newwin(terminal_height-4, round(2*terminal_width/3)-8, 2, 4);
 
   if((pid = fork()) == 0){
-    WINDOW* right_win = newwin((terminal_height/2)-3, round(terminal_width/3)-8, (terminal_height/2)+1, round(2*terminal_width/3)+4);
-    box(right_win, 0, 0);
-    mvwprintw(right_win, 0, 2, "TWOJE WIADOMOŚCI");
-    wmove(right_win, 1, 0);
-
-    child(left_win, right_win, server, nr_on_server, que);
+      child(left_win, server, nr_on_server, que);
   }
   else{
     void on_alarm(){}
